@@ -33,8 +33,13 @@ Response_t ESP8266_WaitKeepString(char* str, uint32_t timeout)
 	for (uint32_t i = 0; i < timeout; i++)
 	{
 		HAL_Delay(1);
-		if (strstr(uart_buffer, str) != NULL)
+		char* ptr = strstr(uart_buffer, str);
+		if (ptr != NULL)
+		{
+			if (ptr - uart_buffer + 4 < UART_BUFFER_SIZE)
+				*(ptr + 4) = '\0';
 			return FOUND;
+		}
 	}
 
 	return TIMEOUT;
@@ -73,16 +78,14 @@ Response_t ESP8266_CheckAT(void)
 void ESP8266_Init(void)
 {
 	ESP8266_ClearBuffer();
-	HAL_StatusTypeDef stat = HAL_UARTEx_ReceiveToIdle_DMA(&STM_UART, (uint8_t*)uart_buffer, UART_BUFFER_SIZE);
-	if (stat == HAL_BUSY)
-	{
-		stat = 14;
-		stat = 1212* stat * uart_buffer[0];
-	}
+	HAL_UARTEx_ReceiveToIdle_DMA(&STM_UART, (uint8_t*)uart_buffer, UART_BUFFER_SIZE);
 }
 
 void ESP8266_ClearBuffer(void)
 {
+	DMA1_Channel1->CCR &= 0x7FFE;				// disable DMA
+	DMA1_Channel1->CNDTR = UART_BUFFER_SIZE;	// reset CNDTR so DMA starts writing from index 0
+	DMA1_Channel1->CCR |= 0x01;					// enable DMA
 	memset(uart_buffer, 255, UART_BUFFER_SIZE);
 }
 
@@ -162,12 +165,7 @@ Response_t WIFI_Connect(WIFI_t* wifi)
 
 void DMA_Callback(void)
 {
-	HAL_StatusTypeDef stat = HAL_UARTEx_ReceiveToIdle_DMA(&STM_UART, (uint8_t*)uart_buffer, UART_BUFFER_SIZE);
-	if (stat == HAL_BUSY)
-	{
-		stat = 14;
-		stat = 1212* stat * uart_buffer[0];
-	}
+	HAL_UARTEx_ReceiveToIdle_DMA(&STM_UART, (uint8_t*)uart_buffer, UART_BUFFER_SIZE);
 }
 
 void ESP8266_HardwareReset(void)
@@ -266,7 +264,7 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
 
 	// calculate width in characters of the body length and connection number
 	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
-	sprintf(conn->response_buffer, PRIu32, body_length);
+	sprintf(conn->response_buffer, "%" PRIu32, body_length);
 	uint32_t body_length_width = strlen(conn->response_buffer);
 	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
 	sprintf(conn->response_buffer, "%d", conn->connection_number);

@@ -115,16 +115,20 @@ int main(void)
 
   Response_t AT_status = ERR;
 
-  HAL_UART_Transmit(&huart1, "AT+RST\r\n", 8, 100);
-  //ESP8266_ATReset();
+  //HAL_UART_Transmit(&huart1, "AT+RST\r\n", 8, 100);
+  ESP8266_ATReset();
 
-  //HAL_Delay(8000);
+  HAL_Delay(10000);
+
+  __HAL_UART_CLEAR_OREFLAG(&huart1);
+
+  ESP8266_Init();
+  //DMA_Callback();
 
   //ESP8266_ClearBuffer();
 
-  //AT_status = ESP8266_CheckAT();
-
-  HAL_UART_Transmit(&huart1, "AT\r\n", 4, 100);
+  //HAL_UART_Transmit(&huart1, "AT\r\n", 4, 100);
+  AT_status = ESP8266_CheckAT();
 
   if (AT_status == OK)
 	  AT_status = WIFI_SetCWMODE("1");
@@ -132,10 +136,12 @@ int main(void)
   if (AT_status == OK)
   	  AT_status = WIFI_SetCIPMUX("1");
 
-  //AT_status = ESP8266_SendATCommandResponse("AT+CIPSERVERMAXCONN=1\r\n", 23, 100);
-
   if (AT_status == OK)
   	  AT_status = WIFI_SetCIPSERVER("23");
+
+  valve1.next_valve = &valve2;
+  valve2.next_valve = &valve3;
+  valve3.next_valve = &valve4;
 
   VALVE_Init(&valve1, 1, VALVE1_GPIO_Port, VALVE1_Pin);
   VALVE_Init(&valve2, 2, VALVE2_GPIO_Port, VALVE2_Pin);
@@ -150,14 +156,13 @@ int main(void)
   {
 	  if (WIFI_WaitRequest(&conn, 1) == FOUND)
 	  {
-		  //ESP8266_SendATCommandKeepString("AT+CIPMODE=1\r\n", 14, 100);
-
 		  if (conn.request_type == GET)
 		  {
-			  if (strstr(conn.request, "key1"))
-			  {
+			  char* key_ptr = NULL;
+			  if ((key_ptr = strstr(conn.request, "key1=")))
 				  WIFI_SendResponse(&conn, "200 OK", "Contiene key1", 13);
-			  }
+			  else if ((key_ptr = strstr(conn.request, "valve=")))
+				  WIFI_HandleValveRequest(&conn, &valve1, key_ptr);
 			  else
 				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto", 24);
 		  }
@@ -165,15 +170,10 @@ int main(void)
 		  {
 			  char* ptr = strstr(conn.request, "at=");
 			  if (ptr != NULL)
-				  AT_HandleRemoteATCommand(&wifi, &conn, ptr + 3);
+				  AT_ExecuteRemoteATCommand(&wifi, &conn, ptr + 3);
 			  else
 				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto", 24);
 		  }
-
-
-		  //ESP8266_SendATCommandResponse("AT+CIPSEND=0,89\r\n", 17, 100);
-		  //HAL_UART_Transmit(&huart1, "HTTP/1.0 200 OK\nContent-Type: text/plain\nContent-Length: 6\nConnection: keep-alive\n\nHello!", 89, 100);
-		  //ESP8266_SendATCommand("AT+CIPCLOSE=0\r\n", 15, 100);
 	  }
     /* USER CODE END WHILE */
 
