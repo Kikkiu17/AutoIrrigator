@@ -1,0 +1,10 @@
+.settings/
+Debug/
+Release/
+backup/
+main_backup/
+mpu_dma/
+Drivers/
+Core/credentials.h
+librerie esterne/
+*.ld
