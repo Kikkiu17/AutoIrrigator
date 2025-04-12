@@ -8,3 +8,4 @@ Drivers/
 Core/credentials.h
 librerie esterne/
 *.ld
+*.launch

@@ -10,35 +10,40 @@
 Response_t AT_ExecuteRemoteATCommand(WIFI_t* wifi, Connection_t* conn, char* command_ptr)
 {
 	Response_t AT_status;
-	memcpy(wifi->command_buf, command_ptr, strlen(conn->request) - (command_ptr - conn->request));
+	if (command_ptr > conn->request + REQUEST_MAX_SIZE) return ERR;
+	memcpy(wifi->buf, command_ptr, conn->request_size - (command_ptr - conn->request));
 
-	if (strstr(wifi->command_buf, "\\r") || strstr(wifi->command_buf, "\\n"))
+	if (strstr(wifi->buf, "\\r") || strstr(wifi->buf, "\\n"))
 	{
 		AT_status = WIFI_SendResponse(conn, "400 Bad Request", "Do not send \\r or \\n characters", 31);
-		memset(wifi->command_buf, 0, 112);
+		memset(wifi->buf, 0, RESPONSE_MAX_SIZE);
 	}
 	else
 	{
-		strcat(wifi->command_buf, "\r\n");	// add trailing \r\n to communicate with the ESP
-		AT_status = ESP8266_SendATCommandKeepString(wifi->command_buf, RESPONSE_MAX_SIZE, 100);
-		memset(wifi->command_buf, 0, RESPONSE_MAX_SIZE);
+		strcat(wifi->buf, "\r\n");	// add trailing \r\n to communicate with the ESP
+		AT_status = ESP8266_SendATCommandKeepString(wifi->buf, RESPONSE_MAX_SIZE, AT_SHORT_TIMEOUT);
+		memset(wifi->buf, 0, RESPONSE_MAX_SIZE);
 
 		if (AT_status == OK)
 		{
-		  sprintf(wifi->command_buf, "DATA:\n");
-		  strcat(wifi->command_buf, ESP8266_GetBuffer());	// get ESP response
+		  sprintf(wifi->buf, "DATA:\n");
+
+		  char* esp_buffer = ESP8266_GetBuffer();
+		  if (strlen(wifi->buf) + strlen(esp_buffer) > RESPONSE_MAX_SIZE) return ERR;
+
+		  strcat(wifi->buf, ESP8266_GetBuffer());	// get ESP response
 		  ESP8266_ClearBuffer();
 		}
 		else if (AT_status == ERR)
-		  sprintf(wifi->command_buf, "FROM ESP: ERROR");
+		  sprintf(wifi->buf, "FROM ESP: ERROR");
 		else if (AT_status == TIMEOUT)
-		  sprintf(wifi->command_buf, "ESP TIMEOUT");
+		  sprintf(wifi->buf, "ESP TIMEOUT");
 		else
-		  sprintf(wifi->command_buf, "UNKNOWN ANSWER");
+		  sprintf(wifi->buf, "UNKNOWN ANSWER");
 
-		AT_status = WIFI_SendResponse(conn, "200 OK", wifi->command_buf, strlen(wifi->command_buf));
+		AT_status = WIFI_SendResponse(conn, "200 OK", wifi->buf, strlen(wifi->buf));
 
-		memset(wifi->command_buf, RESPONSE_MAX_SIZE, 112);
+		memset(wifi->buf, 0, RESPONSE_MAX_SIZE);
 	}
 
 
@@ -48,10 +53,10 @@ Response_t AT_ExecuteRemoteATCommand(WIFI_t* wifi, Connection_t* conn, char* com
 Response_t WIFI_HandleValveRequest(Connection_t* conn, Valve_t* valve1, char* key_ptr)
 {
 	// key_ptr = strstr(conn.request, "valve=")
-	if (key_ptr + 6 - conn->request > strlen(conn->request))
+	if (key_ptr - conn->request > strlen(conn->request))
 		return WIFI_SendResponse(conn, "400 Bad Request", "ID non valido", 13);
 
-	uint8_t requested_valve_id = *(key_ptr + 6) - '0';
+	uint8_t requested_valve_id = *(key_ptr) - '0';
 
 	if (requested_valve_id < 1 || requested_valve_id > 4)
 		return WIFI_SendResponse(conn, "400 Bad Request", "ID non valido", 13);

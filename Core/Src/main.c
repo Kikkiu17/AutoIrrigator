@@ -28,6 +28,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include "..\ESP8266\esp8266.h"
+#include "../wifihandler/wifihandler.h"
 #include <stdio.h>
 
 #include "../credentials.h"
@@ -108,36 +109,23 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   ESP8266_Init();
-
-  /*memcpy(wifi.SSID, ssid, strlen(ssid));
-  memcpy(wifi.pw, password, strlen(password));
-  WIFI_Connect(&wifi);*/
-
-  Response_t AT_status = ERR;
-
-  //HAL_UART_Transmit(&huart1, "AT+RST\r\n", 8, 100);
-  ESP8266_ATReset();
-
-  HAL_Delay(10000);
-
-  __HAL_UART_CLEAR_OREFLAG(&huart1);
+  //ESP8266_ATReset();
+  //HAL_Delay(10000);
+  __HAL_UART_CLEAR_OREFLAG(&huart1);	// clear overrun flag caused by esp reset
 
   ESP8266_Init();
-  //DMA_Callback();
+  memcpy(wifi.SSID, ssid, strlen(ssid));
+  memcpy(wifi.pw, password, strlen(password));
+  WIFI_Connect(&wifi);
+  WIFI_EnableNTPServer(&wifi, 2);
 
-  //ESP8266_ClearBuffer();
-
-  //HAL_UART_Transmit(&huart1, "AT\r\n", 4, 100);
-  AT_status = ESP8266_CheckAT();
-
-  if (AT_status == OK)
-	  AT_status = WIFI_SetCWMODE("1");
-
-  if (AT_status == OK)
-  	  AT_status = WIFI_SetCIPMUX("1");
-
-  if (AT_status == OK)
-  	  AT_status = WIFI_SetCIPSERVER("23");
+  Response_t atstatus = ESP8266_CheckAT();
+  if (atstatus == OK)
+	  atstatus = WIFI_SetCWMODE("1");
+  if (atstatus == OK)
+  	  atstatus = WIFI_SetCIPMUX("1");
+  if (atstatus == OK)
+  	  atstatus = WIFI_SetCIPSERVER("23");
 
   valve1.next_valve = &valve2;
   valve2.next_valve = &valve3;
@@ -154,25 +142,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (WIFI_WaitRequest(&conn, 1) == FOUND)
+	  if (WIFI_ReceiveRequest(&conn, 1) == FOUND)
 	  {
-		  if (conn.request_type == GET)
+		  char* key_ptr = NULL;
+
+		  if ((key_ptr = strstr(conn.request, "/help")))
+			  WIFIHANDLER_HandleHelpRequest(&conn);
+		  else if (conn.request_type == GET)
 		  {
-			  char* key_ptr = NULL;
-			  if ((key_ptr = strstr(conn.request, "key1=")))
-				  WIFI_SendResponse(&conn, "200 OK", "Contiene key1", 13);
-			  else if ((key_ptr = strstr(conn.request, "valve=")))
-				  WIFI_HandleValveRequest(&conn, &valve1, key_ptr);
+			  if ((key_ptr = strstr(conn.request, "valve=")))
+				  WIFI_HandleValveRequest(&conn, &valve1, key_ptr + 6);
+			  if ((key_ptr = strstr(conn.request, "wifi=")))
+				  WIFIHANDLER_HandleWiFiRequest(&wifi, &conn, key_ptr + 5);
 			  else
-				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto", 24);
+				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto. Scrivi help per una lista di comandi", 62);
 		  }
 		  else if (conn.request_type == POST)
 		  {
-			  char* ptr = strstr(conn.request, "at=");
-			  if (ptr != NULL)
-				  AT_ExecuteRemoteATCommand(&wifi, &conn, ptr + 3);
+			  if ((key_ptr = strstr(conn.request, "at=")) != NULL)
+				  AT_ExecuteRemoteATCommand(&wifi, &conn, key_ptr + 3);
 			  else
-				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto", 24);
+				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto. Scrivi help per una lista di comandi", 62);
 		  }
 	  }
     /* USER CODE END WHILE */
