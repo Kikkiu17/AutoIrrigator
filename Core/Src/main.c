@@ -142,29 +142,33 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (WIFI_ReceiveRequest(&conn, 1) == FOUND)
+	  atstatus = WIFI_ReceiveRequest(&wifi, &conn, 1);
+	  if (atstatus == FOUND)
 	  {
 		  char* key_ptr = NULL;
 
-		  if ((key_ptr = strstr(conn.request, "/help")))
+		  if (WIFI_RequestHasKey(&conn, "help"))
 			  WIFIHANDLER_HandleHelpRequest(&conn);
+
 		  else if (conn.request_type == GET)
 		  {
-			  if ((key_ptr = strstr(conn.request, "valve=")))
-				  WIFI_HandleValveRequest(&conn, &valve1, key_ptr + 6);
-			  if ((key_ptr = strstr(conn.request, "wifi=")))
-				  WIFIHANDLER_HandleWiFiRequest(&wifi, &conn, key_ptr + 5);
+			  if ((key_ptr = WIFI_RequestHasKey(&conn, "valve")))
+				  WIFI_HandleValveRequest(&conn, &valve1, key_ptr);
+			  else if ((key_ptr = WIFI_RequestHasKey(&conn, "wifi")))
+				  WIFIHANDLER_HandleWiFiRequest(&conn, key_ptr);
 			  else
 				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto. Scrivi help per una lista di comandi", 62);
 		  }
 		  else if (conn.request_type == POST)
 		  {
-			  if ((key_ptr = strstr(conn.request, "at=")) != NULL)
-				  AT_ExecuteRemoteATCommand(&wifi, &conn, key_ptr + 3);
+			  if ((key_ptr = WIFI_RequestHasKey(&conn, "at")))
+				  AT_ExecuteRemoteATCommand(&conn, key_ptr);
 			  else
 				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto. Scrivi help per una lista di comandi", 62);
 		  }
 	  }
+	  else if (atstatus == ERR)
+		  WIFI_SendResponse(&conn, "500 Internal server error", "", 0);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

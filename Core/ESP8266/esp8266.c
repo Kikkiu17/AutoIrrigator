@@ -230,8 +230,9 @@ Response_t WIFI_SetCIPSERVER(char* server_port)
 	return ESP8266_SendATCommandResponse(cipserver, 19, 100);
 }
 
-Response_t WIFI_ReceiveRequest(Connection_t* conn, uint32_t timeout)
+Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeout)
 {
+	conn->wifi = wifi;
 	char* ptr = NULL;
 	for (uint32_t i = 0; i < timeout; i++)
 	{
@@ -247,7 +248,7 @@ Response_t WIFI_ReceiveRequest(Connection_t* conn, uint32_t timeout)
 
 		conn->request_type = *(ptr + 1);
 
-		ptr = strstr(uart_buffer, " /");
+		ptr = strstr(uart_buffer, " ?");
 		if (ptr == NULL) return ERR;
 
 		uint32_t request_body_start_index = (ptr + 1) - uart_buffer;
@@ -360,4 +361,144 @@ Response_t WIFI_EnableNTPServer(WIFI_t* wifi, int8_t time_offset)
 	}
 
 	return ERR;
+}
+
+char* WIFI_RequestHasKey(Connection_t* conn, char* desired_key)
+{
+	char* parameter_end_ptr = strstr(conn->request, "&");
+	char* key_start = conn->request + 1;
+
+	if (parameter_end_ptr == NULL)
+	{
+		// there could be only one key
+
+		// check if there is a value
+		char* key_end_ptr = strstr(conn->request, "=");
+		if (key_end_ptr == NULL)
+		{
+			// if there is no value, only the key is present or not
+			return strstr(conn->request, desired_key);
+		}
+		else
+		{
+			// there is a value
+
+			*key_end_ptr = '\0';	// limits the search to the key before the value
+			char* desired_key_ptr = strstr(conn->request, desired_key);
+			*key_end_ptr = '=';
+			return desired_key_ptr;
+		}
+	}
+	else
+	{
+		// there are multiple keys
+
+		while (key_start != NULL)
+		{
+			if (parameter_end_ptr != NULL)
+				*parameter_end_ptr = '\0';	// limits the search to the first parameter
+			char* key_end_ptr = strstr(key_start, "=");	// checks if there is a value
+			if (key_end_ptr == NULL)
+			{
+				// there is no value
+				char* desired_key_ptr = strstr(key_start, desired_key);
+				if (parameter_end_ptr != NULL)
+					*parameter_end_ptr = '&';
+				if (desired_key_ptr != NULL)
+				{
+					// key is found
+					return desired_key_ptr;
+				}
+			}
+			else
+			{
+				// there is a value
+				if (parameter_end_ptr != NULL)
+					*parameter_end_ptr = '&';
+				*key_end_ptr = '\0';	// limits the search to the key before the value
+				char* desired_key_ptr = strstr(key_start, desired_key);
+				*key_end_ptr = '=';
+				if (desired_key_ptr != NULL)
+				{
+					// key is found
+					return desired_key_ptr;
+				}
+			}
+
+			// no key is found in this parameter, go to the next one
+			// parameter_end_ptr has already been set to '&', no need to do it again
+			if (parameter_end_ptr != NULL)
+				key_start = parameter_end_ptr + 1;
+			else
+				key_start = NULL;
+			parameter_end_ptr = strstr(parameter_end_ptr + 1, "&");	// begin search from current parameter
+		}
+
+		// no key is found in the parameters
+		return NULL;
+	}
+}
+
+char* WIFI_RequestKeyHasValue(Connection_t* conn, char* request_key_ptr, char* value)
+{
+	char* parameter_end_ptr = strstr(request_key_ptr, "&");
+	if (parameter_end_ptr != NULL)
+		*parameter_end_ptr = '\0';
+
+	char* key_end_ptr = strstr(request_key_ptr, "=");
+
+	if (parameter_end_ptr != NULL)
+		*parameter_end_ptr = '&';
+
+	if (key_end_ptr == NULL)
+	{
+		// there is no value
+		return NULL;
+	}
+	else
+	{
+		if (key_end_ptr - conn->request >= RESPONSE_MAX_SIZE - 2) return NULL;
+		char* value_ptr = strstr(request_key_ptr, value);
+		return value_ptr;
+	}
+}
+
+char* WIFI_GetKeyValue(Connection_t* conn, char* request_key_ptr, uint32_t* value_size)
+{
+	if (conn == NULL || request_key_ptr == NULL) return NULL;
+
+	char* parameter_end_ptr = strstr(request_key_ptr, "&");
+	if (parameter_end_ptr != NULL)
+		*parameter_end_ptr = '\0';
+
+	char* key_end_ptr = strstr(request_key_ptr, "=");
+
+	if (parameter_end_ptr != NULL)
+		*parameter_end_ptr = '&';
+
+	if (key_end_ptr == NULL)
+	{
+		// there is no value
+		return NULL;
+	}
+	else
+	{
+		if (key_end_ptr - conn->request >= RESPONSE_MAX_SIZE - 2) return NULL;
+
+		if (value_size != NULL)
+		{
+			if (parameter_end_ptr != NULL)
+				*value_size = parameter_end_ptr - key_end_ptr + 1;
+			else
+			{
+				uint32_t str_len = strlen(request_key_ptr);
+				if (str_len)
+					*value_size = str_len - (key_end_ptr + 1 - request_key_ptr);
+				else
+					*value_size = 0;
+			}
+		}
+
+		return key_end_ptr + 1;
+	}
 }

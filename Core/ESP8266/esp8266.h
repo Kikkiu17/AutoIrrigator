@@ -46,6 +46,7 @@ typedef struct
 
 typedef struct
 {
+	WIFI_t* 	wifi;
 	uint8_t 	connection_number;
  	Request_t	request_type;
 	char		request[REQUEST_MAX_SIZE];
@@ -77,9 +78,12 @@ Response_t WIFI_SetCWMODE(char* mode);
 Response_t WIFI_SetCIPMUX(char* mux);
 Response_t WIFI_SetCIPSERVER(char* server_port);
 
-Response_t WIFI_ReceiveRequest(Connection_t* conn, uint32_t timeout);
+Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeout);
 Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, uint32_t body_length);
 Response_t WIFI_GetTime(WIFI_t* wifi, char* time_buf, size_t buf_size);
 Response_t WIFI_EnableNTPServer(WIFI_t* wifi, int8_t time_offset);
+char* WIFI_RequestHasKey(Connection_t* conn, char* desired_key);
+char* WIFI_RequestKeyHasValue(Connection_t* conn, char* request_key_ptr, char* value);
+char* WIFI_GetKeyValue(Connection_t* conn, char* request_key_ptr, uint32_t* value_size);
 
 #endif /* ESP8266_ESP8266_H_ */
