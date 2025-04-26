@@ -12,24 +12,32 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MIN_WATER_FLOW 30			// liters per hour
+
+typedef struct flow
+{
+	uint32_t last_ic_val;
+	uint32_t ic_val;
+	uint32_t ic_timestamp;
+	uint32_t period_us;
+	uint32_t lt_per_hour;
+} Flow_t;
+
 typedef struct valve
 {
 	uint8_t id;
-	uint8_t isOpen;
+	char status[6];
 	GPIO_TypeDef* gpio_port;
 	uint16_t gpio_pin;
-	struct valve* next_valve;
+	struct flow* flow;
 } Valve_t;
 
-typedef struct
-{
-
-} Flow_t;
-
 Response_t AT_ExecuteRemoteATCommand(Connection_t* conn, char* command_ptr);
-Response_t WIFI_HandleValveRequest(Connection_t* conn, Valve_t* valve1, char* key_ptr);
-void VALVE_Init(Valve_t* valve, uint8_t id,  GPIO_TypeDef* valve_port, uint16_t valve_pin);
+Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* key_ptr);
+
+void VALVE_Init(Valve_t* valve, Flow_t* flow, uint8_t id,  GPIO_TypeDef* valve_port, uint16_t valve_pin);
 void VALVE_Open(Valve_t* valve);
 void VALVE_Close(Valve_t* valve);
+void FLOW_CalculateFlow(Flow_t* flow);
 
 #endif /* IRRIGATOR_IRRIGATOR_H_ */
