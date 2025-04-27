@@ -27,7 +27,8 @@ Mentre aspettavo l'arrivo delle PCB, ho iniziato a creare il modello 3D del prog
 ![3d](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/3d.png)
 ![valvole](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/valvole.jpg)
 
-### Firmware
+## Software
+### Firmware embedded
 Dopo aver fatto i raccordi e i supporti, sono passato al software. Ho iniziato a scrivere il [mio driver](https://github.com/Kikkiu17/ESP-AT-STM32) per l'ESP-01S dato che non ne ho trovato nessuno online abbastanza semplice da usare compatibile con l'STM32. Il driver sfrutta il DMA dell'STM32 per poter ricevere i dati dell'ESP dalla porta seriale senza usare la CPU, aumentando quindi le prestazioni (in questo caso le prestazioni non sono critiche, ma fa comunque comodo). L'ESP viene connesso alla rete WiFi; viene impostato l'hostname `ESPDEVICE002` per poter essere riconosciuto nella rete; viene impostato il nome `Hub irrigazione`; viene connesso al server NTP in modo da poter ottenere la data e l'ora e infine l'ESP viene impostato in modalità `server` in modo da accettare connessioni remote sulla porta `23`. Poi, nel ciclo while principale, il firmware attende nuove richieste tramite la funzione `WIFI_ReceiveRequest` che dopo verranno gestite.
 
 Grazie ai numerosi timer dell'STM32G030F6P6, ho dedicato tre timer ai quattro sensori di flusso (chiamati FLOW): TIM14 per FLOW1, TIM1 per FLOW2, TIM3 per FLOW3 e FLOW4. In questo modo ho potuto usare quattro pin fisici per ciascun sensore, invece che fare multiplexing coi quattro sensori, rendendo quindi tutto molto più semplice. Imposto i canali timer dei sensori in modalità `Input compare` e abilito gli interrupt per i timer, in modo da ottenere il periodo del segnale PWM dei sensori. Facendo `1/T`, dove T è il periodo, si ottiene la frequenza e dividendola per 7,5 si ottiene il flusso d'acqua in `litri/min`.
