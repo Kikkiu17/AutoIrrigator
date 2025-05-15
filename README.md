@@ -11,21 +11,22 @@ Ho poi stampato in 3D uno stencil per poter spalmare la pasta saldante sui vari 
 
 Schema:
 
-![schema](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/autoirrigator_schema.png)
+<img src="Immagini/autoirrigator_schema.png" width="500"/>
 
 PCB:
 
-![pcb](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/autoirrigator_pcb.png)
+<img src="Immagini/autoirrigator_pcb.png" width="500"/>
 
 Stencil fatto in casa
 
-![stencil](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/stencil.jpg)
-![pcb](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/pcb.jpg)
+<img src="Immagini/stencil.jpg" width="500"/>
+<img src="Immagini/pcb.jpg" width="500"/>
 
 ### Modello 3D
 Mentre aspettavo l'arrivo delle PCB, ho iniziato a creare il modello 3D del progetto, con dei raccordi per le valvole e i sensori. Ho creato un design abbastanza compatto ma comunque semplice da assemblare, con il circuito stampato al centro in modo da poterci collegare tutti i fili comodamente.
-![3d](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/3d.png)
-![valvole](https://github.com/Kikkiu17/AutoIrrigator/blob/main/Immagini/valvole.jpg)
+
+<img src="Immagini/3d.png" width="500"/>
+<img src="Immagini/valvole.jpg" width="500"/>
 
 ## Software
 ### Firmware embedded
@@ -36,4 +37,5 @@ Grazie ai numerosi timer dell'STM32G030F6P6, ho dedicato tre timer ai quattro se
 Infine ho scritto del codice per connettermi all'API di Open-meteo per ottenere le [previsioni per il giorno corrente](http://api.open-meteo.com/v1/forecast?latitude=45.5582&longitude=9.2149&hourly=precipitation,precipitation_probability&current=precipitation&timezone=auto&forecast_days=1) tramite la funzione `WEATHER_GetForecast`. Le previsioni vengono immagazzinate in degli array in modo da poter accedere facilmente ad esse.
 
 ### App Android
-Per controllare il tutto si usa un'app Android, ESPValve. Volevo utilizzare l'app [ESPIOT](https://github.com/Kikkiu17/espiot) di un mio vecchio progetto, ma il modo in cui l'ho scritta rende difficile l'integrazione di nuovi dispositivi ad essa, quindi ho deciso di riscriverla da zero. La vecchia app richiedeva delle caratteristiche specifiche da chiedere ai dispositivi connessi, quindi per aggiungere, ad esempio, un pulsante, bisognava modificare in modo pesante sia l'applicazione che il dispositivo (in questo caso l'STM32 e l'ESP). La nuova app invece chiede ogni 250 ms un pacchetto di `feature` dal dispositivo con questa struttura: `tipoX:Nome,caratteristica_aggiuntiva:Nome:dato` oppure `tipoX:Nome:dato`. `tipo` è il tipo di caratteristica, quindi interruttore, bottone, sensore o timestamp e `caratteristica_aggiuntiva` può essere ad esempio `sensore`. In questo modo, posso creare il pacchetto di caratteristiche che mi interessano e l'app Android crea ogni bottone o sensore o altro col nome specificato e col dato specificato, in base alla struttura data. L'applicazione è un po' instabile a causa del modo in cui aggiorno i dati, data la mia inesperienza riguardo Android, ma è utilizzabile. 
+<img align="left" src="Immagini/app.jpg" height="500">
+Per controllare il tutto si usa un'app Android, ESPValve. Volevo utilizzare l'app [ESPIOT](https://github.com/Kikkiu17/espiot) di un mio vecchio progetto, ma il modo in cui l'ho scritta rende difficile l'integrazione di nuovi dispositivi ad essa, quindi ho deciso di riscriverla da zero. La vecchia app richiedeva delle caratteristiche specifiche da chiedere ai dispositivi connessi, quindi per aggiungere, ad esempio, un pulsante, bisognava modificare in modo pesante sia l'applicazione che il dispositivo (in questo caso l'STM32 e l'ESP). La nuova app invece chiede ogni 250 ms un pacchetto di `feature` dal dispositivo con questa struttura: `tipoX$Nome,caratteristica_aggiuntiva$Nome$dato` oppure `tipoX$Nome$dato`. `tipo` è il tipo di caratteristica, quindi interruttore, bottone, sensore o timestamp e `caratteristica_aggiuntiva` può essere ad esempio `sensore`. In questo modo, posso creare il pacchetto di caratteristiche che mi interessano e l'app Android crea ogni bottone o sensore o altro col nome specificato e col dato specificato, in base alla struttura data.
