@@ -41,6 +41,7 @@ dependencies:
   http: ^1.2.0
   web_socket_channel: ^2.4.0
   flashy_tab_bar2: ^0.0.10
+  network_info_plus: ^6.0.0
 
 dev_dependencies:
   flutter_test:
