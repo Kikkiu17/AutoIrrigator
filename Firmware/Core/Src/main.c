@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
-#include "i2c.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -56,23 +55,33 @@
 /* USER CODE BEGIN PV */
 const uint32_t MAX_FLOW_PERIOD = 1 / ((float)MIN_WATER_FLOW / 60.0 * 7.5) * 1000;
 
+uint8_t time_hour;
+uint8_t time_minute;
+
 WIFI_t wifi;
 Connection_t conn;
+
 Valve_t valve_list[NUM_VALVES];
 Flow_t flow1;
 Flow_t flow2;
 Flow_t flow3;
 Flow_t flow4;
+Schedule_t schedule1;
+Schedule_t schedule2;
+Schedule_t schedule3;
+Schedule_t schedule4;
+
 Weather_t weather;
 
 const char ESP_NAME[] = "Hub irrigazione";
-const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
-const char ESP_IP[] = "192.168.1.18";
+//const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
+//const char ESP_IP[] = "192.168.1.38";
+const char SERVER_PORT[] = "34677";
 
 /**
  * template:
- * type1:Name:data;
- * type2:Name,additional_feature:feature_Name:data,additional_feature:feature_name:data...;
+ * type1$Name:data;
+ * type2$Name,additional_feature$feature_Name$data,additional_feature$feature_name$data...;
  *
  * every type must have a numerical ID (typeX - X being the ID).
  * every type must have a name.
@@ -81,19 +90,27 @@ const char ESP_IP[] = "192.168.1.18";
  * a semicolon ";" must be put at the end of each feature (line).
  *
  * example:
- * switch1:Switch number one,sensor:Switch status:%d;
- * switch2:Switch number two,sensor:Switch status:%d,sensor:Time:%d;
- * timestamp1:Uptime:%d;
- * sensor1:Battery voltage:%d;
+ * switch1$Switch number one,sensor$Switch status$%d;
+ * switch2$Switch number two,sensor$Switch status$%d,sensor$Time$%d;
+ * timestamp1$Uptime$%d;
+ * sensor1$Battery voltage$%d;
  */
 const char FEATURES_TEMPLATE[] =
 {
-		"switch1:Valvola 1,sensor:Stato:%s,sensor:Litri/h:%d;"
-		"switch2:Valvola 2,sensor:Stato:%s,sensor:Litri/h:%d;"
-		"switch3:Valvola 3,sensor:Stato:%s,sensor:Litri/h:%d;"
-		"switch4:Valvola 4,sensor:Stato:%s,sensor:Litri/h:%d;"
-		"button1:08:00-09:30;18:00-19:30,button_text:Imposta;"
-		"timestamp1:Tempo CPU:%d ms;"
+		"switch1$Valvola 1,status$%d,sensor$Litri/h$%d;"
+		"switch2$Valvola 2,status$%d,sensor$Litri/h$%d;"
+		"switch3$Valvola 3,status$%d,sensor$Litri/h$%d;"
+		"switch4$Valvola 4,status$%d,sensor$Litri/h$%d;"
+		//"textinput1$%s,button$Imposta$textInputPOST ?valve=1&schedule=;"
+		//"textinput2$%s,button$Imposta$textInputPOST ?valve=2&schedule=;"
+		//"textinput3$%s,button$Imposta$textInputPOST ?valve=3&schedule=;"
+		//"textinput4$%s,button$Imposta$textInputPOST ?valve=4&schedule=;"
+		"timepicker1$%s,button$Imposta$sendPOST ?valve=1&schedule=;"
+		"timepicker2$%s,button$Imposta$sendPOST ?valve=2&schedule=;"
+		"timepicker3$%s,button$Imposta$sendPOST ?valve=3&schedule=;"
+		"timepicker4$%s,button$Imposta$sendPOST ?valve=4&schedule=;"
+		//"textinput1$NOME 1,button$Imposta$sendPOST ?valve=1&cmd=;"
+		"timestamp1$Tempo CPU$%d ms;"
 };
 /* USER CODE END PV */
 
@@ -138,7 +155,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_I2C2_Init();
   MX_TIM1_Init();
   MX_TIM3_Init();
   MX_TIM14_Init();
@@ -150,27 +166,36 @@ int main(void)
   if (ESP8266_CheckAT() != OK)
   {
 	  // reset ESP
-	  if (ESP8266_ATReset() != OK)
+	  Response_t start_ok = ERR;
+	  while (start_ok != OK)
 	  {
-		  // hardware reset
-		  HAL_GPIO_WritePin(ESPRST_GPIO_Port, ESPRST_Pin, 0);
-		  HAL_Delay(1);
-		  HAL_GPIO_WritePin(ESPRST_GPIO_Port, ESPRST_Pin, 1);
+		  if (ESP8266_ATReset() != OK)
+		  {
+			  // hardware reset
+			  HAL_GPIO_WritePin(ESPRST_GPIO_Port, ESPRST_Pin, 0);
+			  HAL_Delay(1);
+			  HAL_GPIO_WritePin(ESPRST_GPIO_Port, ESPRST_Pin, 1);
+		  }
+		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
+		  start_ok = ESP8266_WaitForStringCNDTROffset("ready", -10, 5000);
+		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
+		  __HAL_UART_CLEAR_OREFLAG(&huart1);	// clear overrun flag caused by esp reset
+		  ESP8266_ClearBuffer();
 	  }
-	  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-	  HAL_Delay(14000);	// TODO: do this without delay
-	  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-	  __HAL_UART_CLEAR_OREFLAG(&huart1);	// clear overrun flag caused by esp reset
-	  //ESP8266_Init();
-	  ESP8266_ClearBuffer();
   }
+
+  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
+  // wait for WiFi, otherwise it will timeout and connect to the WiFi
+  if (ESP8266_WaitForStringCNDTROffset("WIFI CONNECTED", -20, 6000) == OK)
+	  ESP8266_WaitForStringCNDTROffset("WIFI GOT IP", -15, 18000);
+  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 
   memcpy(wifi.SSID, ssid, strlen(ssid));
   memcpy(wifi.pw, password, strlen(password));
 
   WIFI_Connect(&wifi);
-  WIFI_SetIP(&wifi, (char*)ESP_IP);
-  WIFI_SetHostname(&wifi, (char*)ESP_HOSTNAME);
+  //WIFI_SetIP(&wifi, (char*)ESP_IP);
+  //WIFI_SetHostname(&wifi, (char*)ESP_HOSTNAME);
   WIFI_SetName(&wifi, (char*)ESP_NAME);
   WIFI_EnableNTPServer(&wifi, 2);
 
@@ -185,13 +210,13 @@ int main(void)
   if (atstatus == OK)
   	  atstatus = WIFI_SetCIPMUX("1");
   if (atstatus == OK)
-  	  atstatus = WIFI_SetCIPSERVER("23");
+  	  atstatus = WIFI_SetCIPSERVER((char*)SERVER_PORT);
   HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 
-  VALVE_Init(&valve_list[0], &flow1, 1, VALVE1_GPIO_Port, VALVE1_Pin);
-  VALVE_Init(&valve_list[1], &flow2, 2, VALVE2_GPIO_Port, VALVE2_Pin);
-  VALVE_Init(&valve_list[2], &flow3, 3, VALVE3_GPIO_Port, VALVE3_Pin);
-  VALVE_Init(&valve_list[3], &flow4, 4, VALVE4_GPIO_Port, VALVE4_Pin);
+  VALVE_Init(&valve_list[0], &flow1, &schedule1, 1, VALVE1_GPIO_Port, VALVE1_Pin);
+  VALVE_Init(&valve_list[1], &flow2, &schedule2, 2, VALVE2_GPIO_Port, VALVE2_Pin);
+  VALVE_Init(&valve_list[2], &flow3, &schedule3, 3, VALVE3_GPIO_Port, VALVE3_Pin);
+  VALVE_Init(&valve_list[3], &flow4, &schedule4, 4, VALVE4_GPIO_Port, VALVE4_Pin);
 
   HAL_TIM_IC_Start_IT(&htim14, TIM_CHANNEL_1);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -257,9 +282,39 @@ int main(void)
 	  // get time every minute and every 15 minutes get the forecast
 	  if (uwTick - timestamp > 60000)
 	  {
-		  timestamp = uwTick;
-		  if (WIFI_GetTimeMinute(&wifi) % 15 == 0)
+		  time_hour = WIFI_GetTimeHour(&wifi);
+		  time_minute = WIFI_GetTimeMinutes(&wifi);
+		  uint8_t seconds = WIFI_GetTimeSeconds(&wifi);
+		  timestamp = uwTick - seconds * 1000;
+
+		  if (time_minute % 15 == 0)
 			  WEATHER_GetForecast(&weather, ESP8266_GetBuffer());
+
+		  uint8_t will_rain = 0;
+		  for (uint32_t i = 0; i < 24; i++)
+		  {
+			  if (weather.hourly_precipitation[i] / 1000 > 1)	// more than 1 mm
+			  {
+				  will_rain = 1;
+				  break;
+			  }
+		  }
+
+		  for (uint32_t i = 0; i < NUM_VALVES; i++)
+		  {
+			  Valve_t* valve = &(valve_list[i]);
+
+			  if (will_rain)
+			  {
+				  VALVE_Close(valve);
+				  continue;
+			  }
+
+			  if (time_hour == valve->schedule->hour_open && time_minute == valve->schedule->minute_open)
+				  VALVE_Open(valve);
+			  else if (time_hour == valve->schedule->hour_close && time_minute == valve->schedule->minute_close)
+				  VALVE_Close(valve);
+		  }
 
 	  }
     /* USER CODE END WHILE */

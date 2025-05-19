@@ -187,7 +187,7 @@ uint8_t WEATHER_GetForecast(Weather_t* weather, char* uart_buffer)
 	// 2025-04-25T00:00
 	char* time_ptr = date_end_ptr + 2;
 	memcpy(weather->forecast_time, time_ptr, sizeof(weather->forecast_time));
-	weather->forecast_hour = bufferToUInt(weather->forecast_time, 2);
+	weather->forecast_hour = bufferToInt(weather->forecast_time, 2);
 
 	WEATHER_GetPrecipitation(weather, uart_buffer, time_ptr);
 	WEATHER_GetPrecipitationProbability(weather, uart_buffer);

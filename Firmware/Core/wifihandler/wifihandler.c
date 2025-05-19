@@ -136,10 +136,14 @@ Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_li
 {
 	memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
 	sprintf(conn->wifi->buf, features_template,
-			valve_list[0].status, valve_list[0].flow->lt_per_hour,
-			valve_list[1].status, valve_list[1].flow->lt_per_hour,
-			valve_list[2].status, valve_list[2].flow->lt_per_hour,
-			valve_list[3].status, valve_list[3].flow->lt_per_hour,
+			valve_list[0].isOpen, valve_list[0].flow->lt_per_hour,
+			valve_list[1].isOpen, valve_list[1].flow->lt_per_hour,
+			valve_list[2].isOpen, valve_list[2].flow->lt_per_hour,
+			valve_list[3].isOpen, valve_list[3].flow->lt_per_hour,
+			valve_list[0].schedule->text,
+			valve_list[1].schedule->text,
+			valve_list[2].schedule->text,
+			valve_list[3].schedule->text,
 			uwTick);
 	return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, strlen(conn->wifi->buf));
 }

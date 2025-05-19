@@ -81,6 +81,34 @@ Response_t AT_ExecuteRemoteATCommand(Connection_t* conn, char* command_ptr)
 	return AT_status;
 }
 
+Response_t WIFIHANDLER_HandleScheduleRequest(Connection_t* conn, char* command_ptr, Valve_t* valve)
+{
+	uint32_t schedule_size = 0;
+	char* schedule_ptr = WIFI_GetKeyValue(conn, command_ptr, &schedule_size);
+	if (schedule_ptr == NULL)
+		return WIFI_SendResponse(conn, "400 Bad Request", "Programmazione non trovata", 26);
+	if (schedule_size != 11)
+		return WIFI_SendResponse(conn, "400 Bad Request", "La programmazione non è della lunghezza giusta"
+				" (deve avere il formato hh:mm-hh:mm)", 83);
+
+	Schedule_t* schedule = valve->schedule;
+
+	// hh:mm-hh:mm
+	char* number_ptr = schedule_ptr;
+	schedule->hour_open = bufferToInt(number_ptr, 2);
+	schedule->minute_open = bufferToInt(number_ptr + 3, 2);
+	schedule->hour_close = bufferToInt(number_ptr + 6, 2);
+	schedule->minute_close = bufferToInt(number_ptr + 9, 2);
+
+	if (schedule->hour_open == -1 || schedule->minute_open == -1 || schedule->hour_close == -1 || schedule->minute_close == -1)
+		return WIFI_SendResponse(conn, "400 Bad Request", "Programmazione in un formato non corretto"
+				" (deve avere il formato hh:mm-hh:mm)", 77);
+
+	memcpy(schedule->text, number_ptr, 11);
+
+	return OK;
+}
+
 Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* key_ptr)
 {
 	// key_ptr = strstr(conn.request, "valve=")
@@ -95,21 +123,11 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	if (strstr(valve_id_ptr, "help"))
 		return WIFI_SendResponse(conn, "200 OK", (char*)valve_help_message, sizeof(valve_help_message));
 
-	uint32_t requested_valve_id = 0;
-	sscanf(valve_id_ptr, "%" PRIu32, &requested_valve_id);
-
-	if (requested_valve_id < 1 || requested_valve_id > 4)
+	uint8_t requested_valve_id = *valve_id_ptr - '0';
+	if (requested_valve_id < 1 || requested_valve_id > 4 || requested_valve_id > list_size)
 		return WIFI_SendResponse(conn, "400 Bad Request", "ID non valido", 13);
 
-	Valve_t* valve = NULL;
-	for (uint8_t i = 0; i < list_size; i++)
-	{
-		if (valve_list[i].id == requested_valve_id)
-		{
-			valve = &(valve_list[i]);
-			break;
-		}
-	}
+	Valve_t* valve = &(valve_list[requested_valve_id - 1]);
 
 	if (valve == NULL)
 		return WIFI_SendResponse(conn, "400 Bad Request", "ID non trovato", 14);
@@ -122,7 +140,14 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	}
 
 	char* cmd_key_ptr = NULL;
-	if ((cmd_key_ptr = WIFI_RequestHasKey(conn, "cmd")) == NULL)
+	cmd_key_ptr = WIFI_RequestHasKey(conn, "schedule");
+	if (cmd_key_ptr)
+	{
+		if (WIFIHANDLER_HandleScheduleRequest(conn, cmd_key_ptr, valve) == OK)
+			return WIFI_SendResponse(conn, "200 OK", "Programmazione impostata", 24);
+
+	}
+	else if ((cmd_key_ptr = WIFI_RequestHasKey(conn, "cmd")) == NULL)
 		return WIFI_SendResponse(conn, "400 Bad Request", "Comando non trovato", 19);
 
 	uint32_t cmd_size = 0;
@@ -156,9 +181,10 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 		return WIFI_SendResponse(conn, "400 Bad Request", "Comando non riconosciuto", 24);
 }
 
-void VALVE_Init(Valve_t* valve, Flow_t* flow, uint8_t id, GPIO_TypeDef* valve_port, uint16_t valve_pin)
+void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id, GPIO_TypeDef* valve_port, uint16_t valve_pin)
 {
 	valve->flow = flow;
+	valve->schedule = schedule;
 	valve->id = id;
 	memcpy(valve->status, "chiusa", 6);
 	valve->gpio_port = valve_port;
@@ -167,12 +193,14 @@ void VALVE_Init(Valve_t* valve, Flow_t* flow, uint8_t id, GPIO_TypeDef* valve_po
 
 void VALVE_Open(Valve_t* valve)
 {
+	valve->isOpen = 1;
 	memcpy(valve->status, "aperta", 6);
 	HAL_GPIO_WritePin(valve->gpio_port, valve->gpio_pin, 1);
 }
 
 void VALVE_Close(Valve_t* valve)
 {
+	valve->isOpen = 0;
 	memcpy(valve->status, "chiusa", 6);
 	HAL_GPIO_WritePin(valve->gpio_port, valve->gpio_pin, 0);
 }

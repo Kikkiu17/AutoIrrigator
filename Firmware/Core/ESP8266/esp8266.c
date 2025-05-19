@@ -13,16 +13,41 @@
 
 char uart_buffer[UART_BUFFER_SIZE];
 
-uint32_t bufferToUInt(char* buf, uint32_t size)
+int32_t bufferToInt(char* buf, uint32_t size)
 {
 	if (buf == NULL) return 0;
 	uint32_t n = 0;
 	for (uint32_t i = 0; i < size; i++)
 	{
+		if (buf[i] < '0' || buf[i] > '9') return -1;
 		n *= 10;
 		n += buf[i] - '0';
 	}
 	return n;
+}
+
+Response_t ESP8266_WaitForStringCNDTROffset(char* str, int32_t offset, uint32_t timeout)
+{
+	if (str == NULL) return NULVAL;
+	for (uint32_t i = 0; i < timeout; i++)
+	{
+		HAL_Delay(1);
+
+		if (strstr(uart_buffer, "ERR") != NULL)
+		{
+			ESP8266_ClearBuffer();
+			return ERR;
+		}
+
+		if (strstr(uart_buffer + (UART_BUFFER_SIZE - DMA1_Channel1->CNDTR) + offset, str) == NULL) continue;
+
+		ESP8266_ClearBuffer();
+		return OK;
+	}
+
+	if (strstr(uart_buffer, "ERROR")) return ERR;
+
+	return TIMEOUT;
 }
 
 Response_t ESP8266_WaitForString(char* str, uint32_t timeout)
@@ -31,6 +56,13 @@ Response_t ESP8266_WaitForString(char* str, uint32_t timeout)
 	for (uint32_t i = 0; i < timeout; i++)
 	{
 		HAL_Delay(1);
+
+		if (strstr(uart_buffer, "ERR") != NULL)
+		{
+			ESP8266_ClearBuffer();
+			return ERR;
+		}
+
 		if (strstr(uart_buffer, str) == NULL) continue;
 
 		ESP8266_ClearBuffer();
@@ -207,7 +239,9 @@ Response_t WIFI_GetConnectionInfo(WIFI_t* wifi)
 
 	memcpy(wifi->SSID, uart_buffer + SSID_start_index, SSID_size);
 
-	return WIFI_GetIP(wifi);
+	if (WIFI_GetIP(wifi) != OK) return ERR;
+
+	return WIFI_GetHostname(wifi);
 }
 
 Response_t WIFI_Connect(WIFI_t* wifi)
@@ -225,7 +259,7 @@ Response_t WIFI_Connect(WIFI_t* wifi)
 		// connect the ESP to WiFi
 
 		sprintf(wifi->buf, "AT+CWJAP=\"%s\",\"%s\"\r\n", wifi->SSID, wifi->pw);
-		return ESP8266_SendATCommandResponse("AT+CWJAP=", 16 + strlen(wifi->SSID) + strlen(wifi->pw), 15000);
+		return ESP8266_SendATCommandResponse(wifi->buf, strlen(wifi->buf), 15000);
 	}
 	else
 		return WIFI_GetConnectionInfo(wifi);
@@ -264,9 +298,9 @@ Response_t WIFI_SetCIPSERVER(char* server_port)
 	if (sscanf(server_port, "%" PRIu32, &int_server_port) != 1 || int_server_port < 1 || int_server_port > 65535 || int_server_port == 80)
 		return ERR;
 
-	char cipserver[19];
+	char cipserver[50];
 	sprintf(cipserver, "AT+CIPSERVER=1,%s\r\n", server_port);
-	return ESP8266_SendATCommandResponse(cipserver, 19, AT_SHORT_TIMEOUT);
+	return ESP8266_SendATCommandResponse(cipserver, strlen(cipserver), AT_SHORT_TIMEOUT);
 }
 
 Response_t WIFI_SetHostname(WIFI_t* wifi, char* hostname)
@@ -289,27 +323,24 @@ Response_t WIFI_SetHostname(WIFI_t* wifi, char* hostname)
 Response_t WIFI_GetHostname(WIFI_t* wifi)
 {
 	if (wifi == NULL) return NULVAL;
-
 	Response_t atstatus = ESP8266_SendATCommandKeepString("AT+CWHOSTNAME?\r\n", 16, AT_SHORT_TIMEOUT);
 	if (atstatus != OK) return atstatus;
 
+	// +CWHOSTNAME:ESP-A0ADE6
 	char* ptr = strstr(uart_buffer, "+CWHOSTNAME:");
 	if (ptr == NULL) return ERR;
-
 	//			   v
-	// +CWHOSTNAME:ESP-F955D3\r\nOK
-	uint32_t start_index = ptr + 13 - uart_buffer;
-	ptr = strstr(uart_buffer, "\r\nOK");
+	// +CWHOSTNAME:ESP-A0ADE6\r\n
+	char* hostname_start_p = ptr + 12;
+	ptr = strstr(hostname_start_p, "\r\n");
 	if (ptr == NULL) return ERR;
+	char* hostname_end_p = ptr - 1;
 
-	//						v
-	// +CWHOSTNAME:ESP-F955D3\r\nOK
-	uint32_t end_index = ptr - 1 - uart_buffer;
-	uint32_t hostname_size = end_index - start_index + 1;
-	if (hostname_size <= HOSTNAME_MAX_SIZE)
-		memcpy(wifi->hostname, uart_buffer + start_index, hostname_size);
-	else
-		memcpy(wifi->hostname, uart_buffer + start_index, HOSTNAME_MAX_SIZE);
+	uint32_t hostname_size = hostname_end_p - hostname_start_p;
+	if (hostname_size > HOSTNAME_MAX_SIZE) return ERR;
+
+	memset(wifi->hostname, 0, HOSTNAME_MAX_SIZE);
+	memcpy(wifi->hostname, hostname_start_p, hostname_size);
 
 	return OK;
 }
@@ -529,7 +560,8 @@ Response_t WIFI_GetTime(WIFI_t* wifi)
 		if (time_start_ptr == NULL) return ERR;
 		time_start_ptr += 1;
 
-		memcpy(wifi->time, time_start_ptr, 5);
+		memcpy(wifi->time, time_start_ptr, 8);
+		wifi->last_time_read = uwTick;
 	}
 	else return ERR;
 
@@ -539,15 +571,22 @@ Response_t WIFI_GetTime(WIFI_t* wifi)
 uint32_t WIFI_GetTimeHour(WIFI_t* wifi)
 {
 	if (wifi == NULL) return 0;
-	WIFI_GetTime(wifi);
-	return bufferToUInt(wifi->time, 2);
+	if (uwTick - wifi->last_time_read > 1000) WIFI_GetTime(wifi);	// avoids too many slow reads
+	return bufferToInt(wifi->time, 2);
 }
 
-uint32_t WIFI_GetTimeMinute(WIFI_t* wifi)
+uint32_t WIFI_GetTimeMinutes(WIFI_t* wifi)
 {
 	if (wifi == NULL) return 0;
-	WIFI_GetTime(wifi);
-	return bufferToUInt(wifi->time + 3, 2);
+	if (uwTick - wifi->last_time_read > 1000) WIFI_GetTime(wifi);	// avoids too many slow reads
+	return bufferToInt(wifi->time + 3, 2);
+}
+
+uint32_t WIFI_GetTimeSeconds(WIFI_t* wifi)
+{
+	if (wifi == NULL) return 0;
+	if (uwTick - wifi->last_time_read > 1000) WIFI_GetTime(wifi);	// avoids too many slow reads
+	return bufferToInt(wifi->time + 6, 2);
 }
 
 Response_t WIFI_EnableNTPServer(WIFI_t* wifi, int8_t time_offset)

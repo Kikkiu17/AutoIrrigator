@@ -14,9 +14,9 @@
 #define AT_SHORT_TIMEOUT 250
 #define AT_MEDIUM_TIMEOUT 500
 
-#define RESPONSE_MAX_SIZE 512
-#define REQUEST_MAX_SIZE 64
-#define WIFI_BUF_MAX_SIZE 512
+#define RESPONSE_MAX_SIZE 1024
+#define REQUEST_MAX_SIZE 256
+#define WIFI_BUF_MAX_SIZE 800
 #define HOSTNAME_MAX_SIZE 32	// ESPDEVICExxx
 #define NAME_MAX_SIZE 32		// human-readable name
 
@@ -40,13 +40,6 @@ typedef enum
 	TIMEOUT 	= 1,
 	OK 			= 2,
 	NULVAL		= 3,
-	ERR1 		= 4,
-	ERR2 		= 5,
-	ERR3 		= 6,
-	ERR4 		= 7,
-	ERR5 		= 8,
-	ERR6 		= 9,
-	ERR7 		= 10,
 } Response_t;
 
 typedef struct
@@ -57,8 +50,8 @@ typedef struct
 	char		buf[WIFI_BUF_MAX_SIZE];
 	char		hostname[HOSTNAME_MAX_SIZE];
 	char		name[NAME_MAX_SIZE];
-	char		time[5];
-	uint32_t	uptime;
+	char		time[8];	// hh:mm:ss
+	uint32_t	last_time_read;
 } WIFI_t;
 
 typedef struct
@@ -71,7 +64,7 @@ typedef struct
 	char		response_buffer[RESPONSE_MAX_SIZE];
 } Connection_t;
 
-uint32_t bufferToUInt(char* buf, uint32_t size);
+int32_t bufferToInt(char* buf, uint32_t size);
 
 void ESP8266_Init(void);
 void ESP8266_ClearBuffer(void);
@@ -80,6 +73,7 @@ void ESP8266_HardwareReset(void);
 Response_t ESP8266_ATReset(void);
 Response_t ESP8266_CheckAT(void);
 
+Response_t ESP8266_WaitForStringCNDTROffset(char* str, int32_t offset, uint32_t timeout);
 Response_t ESP8266_WaitForString(char* str, uint32_t timeout);
 Response_t ESP8266_WaitKeepString(char* str, uint32_t timeout);
 
@@ -101,7 +95,8 @@ Response_t WIFI_SetIP(WIFI_t* wifi, char* ip);
 
 Response_t WIFI_GetTime(WIFI_t* wifi);
 uint32_t WIFI_GetTimeHour(WIFI_t* wifi);
-uint32_t WIFI_GetTimeMinute(WIFI_t* wifi);
+uint32_t WIFI_GetTimeMinutes(WIFI_t* wifi);
+uint32_t WIFI_GetTimeSeconds(WIFI_t* wifi);
 
 Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeout);
 Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, uint32_t body_length);
