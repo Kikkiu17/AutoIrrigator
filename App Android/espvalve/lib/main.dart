@@ -12,8 +12,8 @@ void main() async {
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     setWindowTitle('ESPIOT');
-    setWindowMaxSize(const Size(650, 830));
-    setWindowMinSize(const Size(650, 830));
+    setWindowMaxSize(const Size(650, 1000));
+    setWindowMinSize(const Size(650, 1000));
   }
   runApp(MainApp(storage: storage));
 }

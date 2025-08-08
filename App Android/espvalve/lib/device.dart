@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:async';
 
 const int updateTime = 250; // ms
+const int maxTimeouts = 5;
 bool update = true;
 
 void showPopupOK(BuildContext context, String title, String content) {
@@ -104,8 +105,9 @@ class Device {
   String name = "";
   String ip = "";
   List<String> features = List.empty(growable: true);
-  final ESPSocket _espsocket = ESPSocket();
+  ESPSocket _espsocket = ESPSocket();
   bool updatingValues = false;
+  int timeoutCount = 0;
 
   Future<String> sendName(String name) async {
     while (!await _espsocket.connect(ip, defaultPort)) {}
@@ -159,12 +161,13 @@ class Device {
     return ret;
   }
 
-  Future<void> getFeatures() async {
+  Future<bool> getFeatures() async {
     String response = await _espsocket.sendAndWaitForAnswerTimeout("GET ?features");
     if (!response.contains("200 OK") || response == "") {
-      return;
+      return false;
     }
     features = response.split("\n")[1].split(";");
+    return true;
   }
 
   DevicePage setThisDevicePage() {
@@ -201,17 +204,35 @@ class DevicePage extends StatefulWidget {
   State<DevicePage> createState() => _DevicePageState();
 }
 
-final ValueNotifier<bool> generateIOs = ValueNotifier(false);
-final ValueNotifier<bool> updateIOs = ValueNotifier(false);
+late Timer timer;
 
-class _DevicePageState extends State<DevicePage> {
-  late Timer _timer;
-  List<Widget> _userIOs = List.empty(growable: true);
+late ValueNotifier<bool> generateIOs;
+ValueNotifier<bool> updateIOs = ValueNotifier(false);
 
+bool connect(BuildContext context, Device dev)
+{
+  bool ok = false;
+  dev._espsocket.connect(dev.ip, defaultPort).then((connected) => {
+    if (connected) {
+      ok = true,
+      timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
+        updateDirectUserIOs(context, dev);
+      }),
+    }
+  });
+
+  return ok;
+}
+
+bool exit = false;
+List<Widget> userIOs = List.empty(growable: true);
+
+class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   void _generateIOsListener() {
+    if (exit) return;
     if (generateIOs.value) {
       updateIOs.value = false;
-      _userIOs = _generateDirectUserIOs(widget.device);
+      userIOs = _generateDirectUserIOs(widget.device);
       updateIOs.value = true;
       generateIOs.value = false;
     }
@@ -220,28 +241,57 @@ class _DevicePageState extends State<DevicePage> {
   @override
   void initState() {
     super.initState();
-    
+    userIOs = List.empty(growable: true);
+    exit = false;
+    update = true;
+    generateIOs = ValueNotifier(false);
     generateIOs.addListener(_generateIOsListener);
 
-    widget.device._espsocket.connect(widget.device.ip, defaultPort).then((connected) => {
-      if (connected) {
-        _timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
-          updateDirectUserIOs(widget.device);
-        }),
+    if (connect(context, widget.device)) {
+      userIOs = _generateDirectUserIOs(widget.device);
+    }
 
-        _userIOs = _generateDirectUserIOs(widget.device),
-      }
-    });
-
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
-    _timer.cancel();
-    generateIOs.removeListener(_generateIOsListener);
-    widget.device._espsocket.close();
+    exit = true;
+    Future.microtask(() async {
+      timer.cancel();
+      while (widget.device.updatingValues) {
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+      generateIOs.removeListener(_generateIOsListener);
+      generateIOs.dispose();
+      widget.device._espsocket.close();
+    });
+
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // app in background
+      print("app in background");
+
+      Future.microtask(() async {
+        timer.cancel();
+        while (widget.device.updatingValues) {
+          await Future.delayed(const Duration(milliseconds: 10));
+        }
+        widget.device._espsocket.close();
+      });
+    } else if (state == AppLifecycleState.resumed) {
+      // app in foreground
+      print("App in foreground");
+      connect(context, widget.device);
+    }
+  }
+
+
 
   // DATA SEPARATOR
   // for example: switch1<DATA SEPARATOR>Valvola1,sensor<DATA SEPARATOR>Stato<DATA SEPARATOR>aperta,sensor<DATA SEPARATOR>Litri/s<DATA SEPARATOR>5.24;
@@ -717,7 +767,7 @@ class _DevicePageState extends State<DevicePage> {
             valueListenable: updateIOs,
             builder: (context, updateIOs, child) {
               return Column(
-                 children: [..._userIOs]
+                 children: [...userIOs]
               );
             }
           ),
@@ -727,11 +777,31 @@ class _DevicePageState extends State<DevicePage> {
   }
 }
 
-void updateDirectUserIOs(Device dev) async {
+void updateDirectUserIOs(BuildContext context, Device dev) async {
+  if (exit) return;
   if (update) {
     dev.updatingValues = true;
-    await dev.getFeatures();
-    generateIOs.value = true;
-    dev.updatingValues = false;
+    bool result = await dev.getFeatures().timeout(const Duration(milliseconds: 250), onTimeout: () => false);
+    if (!result)
+    {
+      dev.timeoutCount++;
+      // reconnect
+
+      if (dev.timeoutCount > maxTimeouts) {
+        dev.timeoutCount = 0;
+        timer.cancel();
+
+        if (context.mounted) {
+            showPopupOK(
+              context,
+              "Riprova",
+              "Non è stato possibile connettersi a ${dev.ip}. Prova a tornare al menù e aprire di nuovo il dispositivo."
+            );
+          }
+      }
+    } else {
+      generateIOs.value = true;
+      dev.updatingValues = false;
+    }
   }
 }

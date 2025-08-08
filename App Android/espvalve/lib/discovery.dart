@@ -48,7 +48,7 @@ Future<List<String>> scanNetwork() async {
         final String subnet = ip!.substring(0, ip.lastIndexOf('.'));
         for (var i = 0; i < maxIp; i++) {
           String ip = '$subnet.$i';
-          await Socket.connect(ip, defaultPort, timeout: Duration(milliseconds: scanTimeout))
+          await Socket.connect(ip, defaultPort, timeout: const Duration(milliseconds: scanTimeout))
             .then((socket) async {
               ips.add(socket.address.address);
               socket.destroy();
