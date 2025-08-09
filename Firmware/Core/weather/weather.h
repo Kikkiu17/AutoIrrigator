@@ -9,11 +9,9 @@
 #define WEATHER_WEATHER_H_
 
 #include "../ESP8266/esp8266.h"
+#include "../settings.h"
 #include <stdio.h>
 #include <string.h>
-
-#define PROBABLE_PRECIPITATION 40			// %, PROB40
-#define LOW_PROB_PRECIPITATION 30			// %, PROB30
 
 typedef struct weather
 {

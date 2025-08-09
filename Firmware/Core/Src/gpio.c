@@ -56,7 +56,8 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(STATUS_GPIO_Port, STATUS_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, VALVE1_Pin|VALVE2_Pin|VALVE3_Pin|VALVE4_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, VALVE1_Pin|VALVE2_Pin|VALVE3_Pin|VALVE4_Pin
+                          |FLOW5_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : ESPRST_Pin */
   GPIO_InitStruct.Pin = ESPRST_Pin;
@@ -72,8 +73,10 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(STATUS_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : VALVE1_Pin VALVE2_Pin VALVE3_Pin VALVE4_Pin */
-  GPIO_InitStruct.Pin = VALVE1_Pin|VALVE2_Pin|VALVE3_Pin|VALVE4_Pin;
+  /*Configure GPIO pins : VALVE1_Pin VALVE2_Pin VALVE3_Pin VALVE4_Pin
+                           FLOW5_Pin */
+  GPIO_InitStruct.Pin = VALVE1_Pin|VALVE2_Pin|VALVE3_Pin|VALVE4_Pin
+                          |FLOW5_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

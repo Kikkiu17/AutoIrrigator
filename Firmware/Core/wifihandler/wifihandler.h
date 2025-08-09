@@ -15,10 +15,7 @@
 #include "../ESP8266/esp8266.h"
 #include "../irrigator/irrigator.h"
 #include "../weather/weather.h"
-
-extern const char get_help_message[];
-
-extern const char post_help_message[];
+#include "../settings.h"
 
 Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr);
 Response_t WIFIHANDLER_HandleHelpRequest(Connection_t* conn);

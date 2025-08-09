@@ -289,17 +289,14 @@ Response_t WIFI_SetCIPMUX(char* mux)
 	return ESP8266_SendATCommandResponse(cipmux, 13, AT_SHORT_TIMEOUT);
 }
 
-Response_t WIFI_SetCIPSERVER(char* server_port)
+Response_t WIFI_SetCIPSERVER(uint16_t server_port)
 {
-	if (server_port == NULL) return NULVAL;
-
-	uint32_t int_server_port = 0;
 	// for some reason ESP AT doesn't receive connections if the server port is 80
-	if (sscanf(server_port, "%" PRIu32, &int_server_port) != 1 || int_server_port < 1 || int_server_port > 65535 || int_server_port == 80)
+	if (server_port < 1 || server_port > 65535 || server_port == 80)
 		return ERR;
 
 	char cipserver[50];
-	sprintf(cipserver, "AT+CIPSERVER=1,%s\r\n", server_port);
+	sprintf(cipserver, "AT+CIPSERVER=1,%d\r\n", server_port);
 	return ESP8266_SendATCommandResponse(cipserver, strlen(cipserver), AT_SHORT_TIMEOUT);
 }
 
@@ -412,9 +409,11 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 	while ((ptr = strstr(ipd_ptr, ":")) == NULL) {}
 
 	uint32_t expected_size = 0;
-	 //		   v
-	 // +IPD,n,m:xxxxxxxxxx
-	sscanf(ipd_ptr + 7, "%" PRIu32, &expected_size);
+	//		  v-->v
+	// +IPD,n,xxxxx:xxxxxxxxxx
+	char* expected_size_end_p = ptr;
+	uint8_t num_size = expected_size_end_p - (ipd_ptr + 7);
+	expected_size = bufferToInt(ipd_ptr + 7, num_size);
 
 	uint32_t start_time = uwTick;
 	uint32_t string_len = 0;
@@ -468,10 +467,9 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 	ptr = strstr(uart_buffer, " HTTP");
 	if (ptr == NULL)
 	{
-		//if ((ptr = strstr(uart_buffer, "+IPD,")) == NULL) return ERR4;
 		// if there is no HTTP/x.x use the message size m (at ptr + 7)
 		// +IPD,n,m:GET ?xxxxxxxxxx
-		sscanf(ipd_ptr + 7, "%" PRIu32, &request_size);
+		request_size = expected_size;
 		uint32_t request_start_index;
 		if ((ptr = strstr(uart_buffer, ":")) == NULL) return ERR;
 		// this removes the "POST " (or "GET ") part
@@ -482,6 +480,9 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 	}
 	else
 	{
+		// otherwise get this length
+		// 				 v -----> v
+		// +IPD,n,m:GET ?xxxxxxxxxx HTTP....
 		uint32_t request_end_index = (ptr - 1) - uart_buffer;
 		if (request_end_index < request_body_start_index) return ERR;
 		request_size = request_end_index - request_body_start_index + 1;

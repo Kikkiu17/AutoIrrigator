@@ -7,51 +7,6 @@
 
 #include "wifihandler.h"
 
-const char GET_HELP_MESSAGE[] =
-{
-		"Comandi GET:"
-		"\n- valve"
-		"\n- wifi"
-		"\n- features"
-		"\n- weather"
-		"\n- help"
-		"\n\nper ottenere aiuto per ogni comando, fai <comando>=help"
-};
-
-const char POST_HELP_MESSAGE[] =
-{
-		"Comandi POST:"
-		"\n- at"
-		"\n\nper ottenere aiuto per ogni comando, fai <comando>=help"
-};
-
-const char WIFI_HELP_MESSAGE[] =
-{
-		"Comandi GET WiFi:"
-		"\n- SSID"
-		"\n- IP"
-		"\n- ID (ESPDEVICExxx)"
-		"\n- name"
-		"\n- buf"
-		"\n- conn (dettagli connesione)"
-		"\n- help"
-		"\n\nComandi POST WiFi:"
-		"\n- changename"
-		"\n- help"
-};
-
-const char WEATHER_HELP_MESSAGE[] =
-{
-		"Comandi GET weather:"
-		"\n- lowprob (prima ora in cui ci sara' probabilita' di pioggia maggiore del 30%)"
-		"\n- prob (prima ora in cui ci sara' probabilita' di pioggia maggiore del 40%)"
-		"\n- now (precipitazioni attuali)"
-		"\n- precipitation (precipitazioni per ogni ora del giorno)"
-		"\n- hourprob (prob di precipitazioni per ogni ora del giorno)"
-		"\n- updatetime"
-		"\n- help"
-};
-
 Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 {
 	if (WIFI_RequestKeyHasValue(conn, command_ptr, "help"))
@@ -136,10 +91,11 @@ Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_li
 {
 	memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
 	sprintf(conn->wifi->buf, features_template,
+			valve_list[3].flow->lt_per_hour,	// il flussimetro generale è associato alla valvola 4
 			valve_list[0].isOpen, valve_list[0].flow->lt_per_hour,
 			valve_list[1].isOpen, valve_list[1].flow->lt_per_hour,
 			valve_list[2].isOpen, valve_list[2].flow->lt_per_hour,
-			valve_list[3].isOpen, valve_list[3].flow->lt_per_hour,
+			valve_list[3].isOpen,
 			valve_list[0].schedule->text,
 			valve_list[1].schedule->text,
 			valve_list[2].schedule->text,

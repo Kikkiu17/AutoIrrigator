@@ -30,6 +30,41 @@ const char at_help_message[] =
 		"\nnon inviare la sequenza \\r\\n alla fine del comando"
 };
 
+uint8_t SCHEDULE_SetSchedule(Valve_t* valve, char* new_schedule)
+{
+	Schedule_t* schedule = valve->schedule;
+	// hh:mm-hh:mm
+	schedule->hour_open = bufferToInt(new_schedule, 2);
+	schedule->minute_open = bufferToInt(new_schedule + 3, 2);
+	schedule->hour_close = bufferToInt(new_schedule + 6, 2);
+	schedule->minute_close = bufferToInt(new_schedule + 9, 2);
+
+	if (schedule->hour_open == -1 || schedule->minute_open == -1 || schedule->hour_close == -1 || schedule->minute_close == -1)
+		return 0;
+
+	memcpy(schedule->text, new_schedule, 11);
+	return 1;
+}
+
+void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb)
+{
+	FLASH_ReadSaveData();
+
+	for (uint8_t i = 0; i < valves_nb; i++)
+	{
+		memcpy(valve_list[i].schedule->text, savedata.schedules + SCHEDULE_TIME_SIZE * i, SCHEDULE_TIME_SIZE);
+	}
+}
+
+void SCHEDULE_Save(Valve_t* valve_list, uint8_t valves_nb)
+{
+	for (uint8_t i = 0; i < valves_nb; i++)
+	{
+		memcpy(savedata.schedules + SCHEDULE_TIME_SIZE * i, valve_list[i].schedule->text, SCHEDULE_TIME_SIZE);
+	}
+	FLASH_WriteSaveData();
+}
+
 Response_t AT_ExecuteRemoteATCommand(Connection_t* conn, char* command_ptr)
 {
 	Response_t AT_status;
@@ -77,34 +112,24 @@ Response_t AT_ExecuteRemoteATCommand(Connection_t* conn, char* command_ptr)
 		AT_status = WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, strlen(conn->wifi->buf));
 	}
 
-
 	return AT_status;
 }
 
 Response_t WIFIHANDLER_HandleScheduleRequest(Connection_t* conn, char* command_ptr, Valve_t* valve)
 {
 	uint32_t schedule_size = 0;
-	char* schedule_ptr = WIFI_GetKeyValue(conn, command_ptr, &schedule_size);
-	if (schedule_ptr == NULL)
+	char* new_schedule = WIFI_GetKeyValue(conn, command_ptr, &schedule_size);
+	if (new_schedule == NULL)
 		return WIFI_SendResponse(conn, "400 Bad Request", "Programmazione non trovata", 26);
 	if (schedule_size != 11)
 		return WIFI_SendResponse(conn, "400 Bad Request", "La programmazione non è della lunghezza giusta"
 				" (deve avere il formato hh:mm-hh:mm)", 83);
 
-	Schedule_t* schedule = valve->schedule;
+	uint8_t schedule_ok = SCHEDULE_SetSchedule(valve, new_schedule);
 
-	// hh:mm-hh:mm
-	char* number_ptr = schedule_ptr;
-	schedule->hour_open = bufferToInt(number_ptr, 2);
-	schedule->minute_open = bufferToInt(number_ptr + 3, 2);
-	schedule->hour_close = bufferToInt(number_ptr + 6, 2);
-	schedule->minute_close = bufferToInt(number_ptr + 9, 2);
-
-	if (schedule->hour_open == -1 || schedule->minute_open == -1 || schedule->hour_close == -1 || schedule->minute_close == -1)
+	if (!schedule_ok)
 		return WIFI_SendResponse(conn, "400 Bad Request", "Programmazione in un formato non corretto"
 				" (deve avere il formato hh:mm-hh:mm)", 77);
-
-	memcpy(schedule->text, number_ptr, 11);
 
 	return OK;
 }
@@ -144,7 +169,10 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	if (cmd_key_ptr)
 	{
 		if (WIFIHANDLER_HandleScheduleRequest(conn, cmd_key_ptr, valve) == OK)
+		{
+			SCHEDULE_Save(valve_list, list_size);
 			return WIFI_SendResponse(conn, "200 OK", "Programmazione impostata", 24);
+		}
 
 	}
 	else if ((cmd_key_ptr = WIFI_RequestHasKey(conn, "cmd")) == NULL)
