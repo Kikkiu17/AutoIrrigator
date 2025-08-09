@@ -6,6 +6,44 @@ import 'device.dart';
 import 'package:flashy_tab_bar2/flashy_tab_bar2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'settings.dart';
+import '../main.dart';
+
+const int maxPages = 3;
+const int homePageIndex = 0;
+const int devicePageIndex = 1;
+const int settingsPageIndex = 2;
+
+const ListTile loadingTile = ListTile(
+  title: Padding(
+    padding: EdgeInsets.all(8.0),
+      child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        SizedBox(width: 16),
+        Text("Caricamento..."),
+      ],
+      ),
+  )
+);
+
+const ListTile noDeviceTile = ListTile(
+  title: Padding(
+    padding: EdgeInsets.all(8.0),
+      child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text("Nessun dispositivo selezionato", style: TextStyle(fontSize: 16, color: Colors.grey)),
+      ],
+      ),
+  )
+);
+
 class HomePage extends StatefulWidget
 {
   final SharedPreferences storage;
@@ -17,19 +55,23 @@ class HomePage extends StatefulWidget
 
 class _HomePageState extends State<HomePage> {
   Socket? socket;
-  static List<Widget> _cardList = List.empty(growable: true);
   static Widget pageToRender = const Text('Caricamento...');
 
   static bool _updateExistingIDs = true;
 
   static List<String> _existingIPandIDs = List.empty(growable: true);
 
-  static DevicePage? page;
+  //static DevicePage? page;
+  static List<Widget> pages = List.filled(maxPages, loadingTile, growable: false);
   static Device _selectedDevice = Device();
   static int _selectedIndex = 0;
 
+  bool darkTheme = false;
+
 @override
   void initState() {
+    pages[devicePageIndex] = noDeviceTile;
+    pages[settingsPageIndex] = const SettingsPage();
     _createDeviceList();
     super.initState();
   }
@@ -56,18 +98,13 @@ class _HomePageState extends State<HomePage> {
       _existingIPandIDs = await _getData();
     }
 
-    // svuota la lista dei dispositivi durante il caricamento
-    _cardList = [
-      const ListTile(
-        title: Padding(
-          padding: EdgeInsets.all(8.0),
-          child: Text("Caricamento..."),
-        )
-      )
-    ];
+    setState(() {
+      pages[homePageIndex] = loadingTile;
+    });
 
     // cerca nuovi dispositivi e crea le tile
     discoverDevices(_existingIPandIDs).then((deviceList) {
+      if (!mounted) return; // don't use context if the widget isn't mounted
       _existingIPandIDs = List.empty(growable: true);
       List<Widget> cardList = List.empty(growable: true);
       List<String> ipsAndIds = List.empty(growable: true);
@@ -80,7 +117,7 @@ class _HomePageState extends State<HomePage> {
         const Padding(padding: EdgeInsets.only(top: 8.0))
       );
 
-      // crea il pulsante di aggiornamento della lista
+      // list update button
       cardList.add(
       ListTile(
           title: ElevatedButton(
@@ -95,7 +132,7 @@ class _HomePageState extends State<HomePage> {
         )
       );
 
-      // crea il pulsante di discovery
+      // discovery button
       cardList.add(
       ListTile(
           title: ElevatedButton(
@@ -110,24 +147,27 @@ class _HomePageState extends State<HomePage> {
         )
       );
 
-      _saveItem(ipsAndIds);  // salva la lista di dispositivi trovati
+      _saveItem(ipsAndIds);  // save found device list
 
-      // effettua il rebuild del widget con la nuova lista
+      // rebuild everything with the new device list
       setState(() {
-        _cardList = cardList;
+        pages[homePageIndex] = ListView(
+          children: cardList,
+        );
       });
     });
   }
 
   ListTile _createDeviceTile(Device device, BuildContext context) {
+    final theme = Theme.of(context);
     return ListTile(
-      tileColor: (device.name == "OFFLINE") ? const Color.fromARGB(255, 228, 228, 228) : Theme.of(context).colorScheme.surface,
+      tileColor: (device.name == "OFFLINE") ? Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainer.withAlpha(200), const Color.fromARGB(255, 255, 148, 148)) : theme.colorScheme.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
-        side: const BorderSide(width: 0.8),
+        //side: const BorderSide(width: 0.8),
         borderRadius: BorderRadius.circular(20),
       ),
       leading: CircleAvatar(
-        backgroundColor: (device.name == "OFFLINE") ? const Color.fromARGB(255, 182, 182, 182) : null,
+        backgroundColor: (device.name == "OFFLINE") ? Theme.of(context).colorScheme.surfaceContainerLow : null,
         child: const Icon(Icons.sensors)
       ),
       title: Text(device.name),
@@ -160,13 +200,11 @@ class _HomePageState extends State<HomePage> {
         if (device.name == "OFFLINE") {
           showPopupOK(context, "Impossibile effettuare l'azione", "Il dispositivo sembra essere offline. prova ad aggiornare la lista.");
         } else {
-          page = device.setThisDevicePage();
-          if (page.runtimeType == DevicePage) {
-            setState(() {
-              _selectedIndex = 1;
-              _selectedDevice = device;
-            });
-          }
+          pages[devicePageIndex] = device.setThisDevicePage();
+          setState(() {
+            _selectedIndex = devicePageIndex; // actually switch to the device page
+            _selectedDevice = device;
+          });
         }
       },
     );
@@ -174,36 +212,71 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedIndex == 1 && page.runtimeType == DevicePage) {
-      pageToRender = page!;
-    }
-    else {
-      pageToRender = ListView(
-        children: _cardList,
-      );
-    }
+    pageToRender = pages[_selectedIndex];
+
+    // Titles for the AppBar
+    final List<String> titles = [
+      "Dispositivi",
+      _selectedDevice.name,
+      "Impostazioni",
+    ];
+
+    // Get theme colors
+    final theme = Theme.of(context);
+    final activeColor = theme.colorScheme.primary;
+    final inactiveColor = theme.unselectedWidgetColor;
 
     return Scaffold (
       appBar: AppBar(
-        title: _selectedIndex == 0 ? const Text("Dispositivi") : Text(_selectedDevice.name),
+        title: Text(titles[_selectedIndex]),
       ),
       body: Center(child: FractionallySizedBox(widthFactor: 0.95, child: pageToRender)),
+      /*body: Column(children: [
+        Expanded(child: pageToRender),
+        ListTile(
+          title: const Text("Aggiorna"),
+          tileColor: theme.colorScheme.surfaceContainerHighest,
+        )
+      ]),*/
       bottomNavigationBar: FlashyTabBar(
         animationCurve: Curves.linear,
         selectedIndex: _selectedIndex,
         iconSize: 30,
         showElevation: false,
+        backgroundColor: theme.colorScheme.surface,
         onItemSelected: (index) => setState(() {
+          // check if theme has been changed
+          bool currentThemeDark = false;
+          if (themeNotifier.value == ThemeMode.dark) {
+            currentThemeDark = true;
+          }
+          if (darkTheme != currentThemeDark && index == homePageIndex) {
+            // reload pages that need to be reloaded on theme change
+            darkTheme = currentThemeDark;
+            _updateExistingIDs = true;
+            _createDeviceList();
+          }
+
           _selectedIndex = index;
         }),
         items: [
           FlashyTabBarItem(
             icon: const Icon(Icons.list),
+            activeColor: activeColor,
+            inactiveColor: inactiveColor,
             title: const Text('Lista'),
           ),
           FlashyTabBarItem(
             icon: const Icon(Icons.sensors),
+            activeColor: activeColor,
+            inactiveColor: inactiveColor,
             title: const Text('Dispositivo'),
+          ),
+          FlashyTabBarItem(
+            icon: const Icon(Icons.settings),
+            activeColor: activeColor,
+            inactiveColor: inactiveColor,
+            title: const Text('Impostazioni'),
           ),
         ],
       ),

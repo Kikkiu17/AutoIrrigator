@@ -2,13 +2,33 @@ import 'package:flutter/material.dart';
 import 'dart:io' show  Platform;
 import 'package:window_size/window_size.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'homepage.dart';
+import 'pages/homepage.dart';
+import 'pages/settings.dart';
+
+final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
+
+ThemeData light = ThemeData(
+  useMaterial3: true,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color.fromARGB(255, 34, 192, 255),
+    brightness: Brightness.light,
+  ),
+);
+
+ThemeData dark = ThemeData(
+  useMaterial3: true,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color.fromARGB(255, 34, 192, 255),
+    brightness: Brightness.dark,
+  ),
+);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   //await Permission.storage.request().isGranted;
-
   final SharedPreferences storage = await SharedPreferences.getInstance();
+
+  savedSettings.load();
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     setWindowTitle('ESPIOT');
@@ -25,13 +45,17 @@ class MainApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'ESPVALVE',
-      theme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 34, 192, 255)),
-      ),
-      home: HomePage(storage: storage),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'ESP Valve',
+          theme: light,
+          darkTheme: dark,
+          themeMode: mode,
+          home: HomePage(storage: storage),
+        );
+      },
     );
   }
 }

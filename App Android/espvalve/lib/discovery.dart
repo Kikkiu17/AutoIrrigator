@@ -1,13 +1,11 @@
 import 'dart:async';
-import 'device.dart';
+import 'pages/device.dart';
 import 'dart:io';
 import 'package:network_info_plus/network_info_plus.dart';
+import 'pages/settings.dart';
 
-const int maxIp = 64; // max number of IPs to scan
-const int scanTimeout = 30; // ms
 const String idTemplate = "ESPDEVICE";
 int timeout = 1000; // ms
-const int defaultPort = 34677; // default port for ESP devices
 
 Future<Device> createDevice(String ip, ESPSocket socket) async
 {
@@ -46,9 +44,9 @@ Future<List<String>> scanNetwork() async {
     await (NetworkInfo().getWifiIP()).then(
       (ip) async {
         final String subnet = ip!.substring(0, ip.lastIndexOf('.'));
-        for (var i = 0; i < maxIp; i++) {
+        for (var i = 0; i < savedSettings.getMaxIp(); i++) {
           String ip = '$subnet.$i';
-          await Socket.connect(ip, defaultPort, timeout: const Duration(milliseconds: scanTimeout))
+          await Socket.connect(ip, defaultPort, timeout: Duration(milliseconds: savedSettings.getScanTimeout()))
             .then((socket) async {
               ips.add(socket.address.address);
               socket.destroy();

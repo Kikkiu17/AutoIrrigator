@@ -1,7 +1,11 @@
+// warning not needed, context is always mounted here
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:io';
 
+import 'package:espvalve/pages/settings.dart';
 import 'package:flutter/material.dart';
-import 'discovery.dart';
+import '../discovery.dart';
 
 import 'dart:convert';
 import 'dart:async';
@@ -105,7 +109,7 @@ class Device {
   String name = "";
   String ip = "";
   List<String> features = List.empty(growable: true);
-  ESPSocket _espsocket = ESPSocket();
+  final ESPSocket _espsocket = ESPSocket();
   bool updatingValues = false;
   int timeoutCount = 0;
 
@@ -242,6 +246,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     userIOs = List.empty(growable: true);
+    userIOs.add(loadingTileNoText);
     exit = false;
     update = true;
     generateIOs = ValueNotifier(false);
@@ -273,10 +278,9 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached ||
+    state == AppLifecycleState.inactive || state == AppLifecycleState.hidden) {
       // app in background
-      print("app in background");
-
       Future.microtask(() async {
         timer.cancel();
         while (widget.device.updatingValues) {
@@ -286,7 +290,6 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
       });
     } else if (state == AppLifecycleState.resumed) {
       // app in foreground
-      print("App in foreground");
       connect(context, widget.device);
     }
   }
@@ -316,15 +319,15 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
       } else if (addon.contains("status")) {
         String status = addon.split(_dataSeparator)[1];
         if (status == "0") {
-          color = const Color.fromARGB(255, 255, 187, 187);
+          color = Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerLow.withAlpha(50), const Color.fromARGB(255, 231, 67, 67));
         } else if (status == "1") {
-          color = const Color.fromARGB(255, 187, 255, 187);
+          color = Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerLow.withAlpha(50), const Color.fromARGB(255, 59, 208, 59));
         }
       }
     }
 
     return Card(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -378,7 +381,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     String text = "$timestampName: $timestamp";
 
     return Card(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -406,7 +409,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     text += "$sensorName: $sensorData";
 
     return Card(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -434,7 +437,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     }
 
     return Card(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -539,7 +542,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     }
 
     return Card(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -621,8 +624,10 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
         addons.add(
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: Color.alphaBlend(Colors.white.withAlpha(150), Theme.of(context).colorScheme.inversePrimary),
-              foregroundColor: Theme.of(context).colorScheme.primary,
+              //backgroundColor: Color.alphaBlend(Colors.white.withAlpha(150), Theme.of(context).colorScheme.inversePrimary),
+              //backgroundColor: Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerHigh.withAlpha(30), Theme.of(context).colorScheme.primary),
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
             ),
             child: Text(buttonText),
             onPressed: () async {
@@ -661,15 +666,18 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
       }
     }
 
+
     Color timePickerColor;
     if (timePickerReceivedData != "${receivedTime[0]}-${receivedTime[1]}") {
-        timePickerColor = const Color.fromARGB(255, 255, 187, 187);
+        // const Color.fromARGB(255, 255, 187, 187)
+        timePickerColor = Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerLow.withAlpha(50), const Color.fromARGB(255, 255, 72, 72));
       } else {
-        timePickerColor = const Color.fromARGB(255, 243, 243, 243);
+        //timePickerColor = const Color.fromARGB(255, 243, 243, 243);
+        timePickerColor = Theme.of(context).colorScheme.surfaceContainerLow;
       }
 
     return Card(
-      color: Theme.of(context).cardColor,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: Padding(
         padding: const EdgeInsets.all(5),
         child: Row(
@@ -681,7 +689,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                   backgroundColor: timePickerColor,
-                  foregroundColor: Colors.black,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.all(Radius.circular(5)),
                   ),
@@ -702,7 +710,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                   backgroundColor: timePickerColor,
-                  foregroundColor: Colors.black,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.all(Radius.circular(5)),
                   ),
@@ -791,13 +799,25 @@ void updateDirectUserIOs(BuildContext context, Device dev) async {
         dev.timeoutCount = 0;
         timer.cancel();
 
-        if (context.mounted) {
-            showPopupOK(
-              context,
-              "Riprova",
-              "Non è stato possibile connettersi a ${dev.ip}. Prova a tornare al menù e aprire di nuovo il dispositivo."
-            );
-          }
+        showPopupOK(
+          context,
+          "Riprova",
+          "Non è stato possibile connettersi a ${dev.ip}. Prova a tornare al menù e aprire di nuovo il dispositivo."
+        );
+
+        ListTile cannotConnect = ListTile(
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text("Impossibile connettersi a ${dev.ip}", style: const TextStyle(fontSize: 16, color: Colors.grey)),
+              ],
+            ),
+        );
+
+        userIOs = List.empty(growable: true);
+        userIOs.add(cannotConnect);
+        updateIOs.value = false;
+        updateIOs.value = true;
       }
     } else {
       generateIOs.value = true;
