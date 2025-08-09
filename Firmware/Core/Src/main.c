@@ -294,10 +294,10 @@ int main(void)
 				  continue;
 			  }
 
-			  if (time_hour == valve->schedule->hour_open && time_minute == valve->schedule->minute_open)
-				  VALVE_Open(valve);
-			  else if (time_hour == valve->schedule->hour_close && time_minute == valve->schedule->minute_close)
+			  if (time_hour == valve->schedule->hour_close && time_minute == valve->schedule->minute_close)
 				  VALVE_Close(valve);
+			  else if (time_hour == valve->schedule->hour_open && time_minute == valve->schedule->minute_open)
+				  VALVE_Open(valve);
 		  }
 
 	  }

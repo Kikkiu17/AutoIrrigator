@@ -6,6 +6,7 @@
  */
 
 #include "esp8266.h"
+#include "../Flash/flash.h"
 #include <string.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -342,6 +343,7 @@ Response_t WIFI_GetHostname(WIFI_t* wifi)
 	return OK;
 }
 
+// also saves the name in FLASH memory
 Response_t WIFI_SetName(WIFI_t* wifi, char* name)
 {
 	if (wifi == NULL) return ERR;
@@ -352,9 +354,17 @@ Response_t WIFI_SetName(WIFI_t* wifi, char* name)
 	if (name == NULL) return NULVAL;
 
 	if (name_size > NAME_MAX_SIZE)
+	{
+		memcpy(savedata.name, name, NAME_MAX_SIZE);
 		memcpy(wifi->name, name, NAME_MAX_SIZE);
+	}
 	else
+	{
+		memcpy(savedata.name, name, name_size);
 		memcpy(wifi->name, name, name_size);
+	}
+
+	FLASH_WriteSaveData();
 
 	return OK;
 }
