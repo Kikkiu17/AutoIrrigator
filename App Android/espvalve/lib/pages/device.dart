@@ -7,7 +7,7 @@ import 'package:espvalve/pages/settings.dart';
 import 'package:flutter/material.dart';
 import '../discovery.dart';
 
-import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:async';
 
 const int updateTime = 250; // ms
@@ -31,42 +31,74 @@ void showPopupOK(BuildContext context, String title, String content) {
 }
 
 class ESPSocket {
-  late Socket _socket;
-  Completer _completer = Completer();
+  late Socket socket;
+  static String _answer = "";
+  static bool _dataReceived = false;
+  static bool _error = false;
+  static bool _busy = false;
 
-  void socketListen() {
-    _socket.listen(
-      (event) {
-        if (_completer.isCompleted) {
-          _completer = Completer();
-        }
-        _completer.complete(event);
-      },
-    );
+  bool isBusy() {
+    return _busy;
   }
 
-  Future<String> sendAndWaitForAnswer(data) async {
-    _socket.write(data);
-    var answer = await _completer.future;
-    _completer = Completer();
-    answer = utf8.decode(answer);
-    return answer;
+  void dataHandler(data) async {
+    _answer = String.fromCharCodes(data).trim();
+    developer.log("Received: $_answer");
+    _dataReceived = true;
   }
+
+  void errorHandler(error, StackTrace trace) {
+    developer.log("Error in socket: $error", stackTrace: trace);
+    _error = true;
+  }
+
+  /*Future<String> sendAndWaitForAnswer(data) async {
+    _busy = true;
+    socket.write(data);
+    while (!_dataReceived && !_error) {
+      await Future.delayed(const Duration(milliseconds: 10));
+    }
+
+    if (_error) {
+      _dataReceived = false;
+      _error = false;
+      _busy = false;
+      return "";
+    }
+
+    _dataReceived = false;
+    _busy = false;
+    return _answer;
+  }*/
 
   Future<String> sendAndWaitForAnswerTimeout(data) async {
-    _socket.write(data);
-    try {
-      var answer = await _completer.future.timeout(Duration(milliseconds: timeout));
-      _completer = Completer();
-      answer = utf8.decode(answer);
-      return answer;
-    } catch (e) {
+    _busy = true;
+    socket.write(data);
+
+    int elapsed = 0;
+    while (!_dataReceived && !_error && elapsed < timeout) {
+      await Future.delayed(const Duration(milliseconds: 10));
+      elapsed += 10;
+    }
+
+    if (_error) {
+      _dataReceived = false;
+      _error = false;
+      _busy = false;
       return "";
     }
+
+    if (!_dataReceived) {
+      return "";
+    }
+
+    _dataReceived = false;
+    _busy = false;
+    return _answer;
   }
 
-  Future<String> getAnswerTimeout() async {
-    await _socket.flush();
+  /*Future<String> getAnswerTimeout() async {
+    await socket.flush();
     try {
       var answer = await _completer.future.timeout(Duration(milliseconds: timeout));
       _completer = Completer();
@@ -75,32 +107,38 @@ class ESPSocket {
     } catch (e) {
       return "";
     }
-  }
+  }*/
 
   Future<bool> connect(String ip, int port) async {
-    try {
-      _socket = await Socket.connect(ip, port, timeout: Duration(milliseconds: timeout));
-      socketListen();
-      return true;
-    } catch (e) {
+    socket = await Socket.connect(ip, defaultPort).catchError((Object e, StackTrace stackTrace) {
+      developer.log("Error connecting to socket: $e", stackTrace: stackTrace);
+      _error = true;
+      throw e;
+    });
+
+    if (_error) {
+      _error = false;
       return false;
     }
-    /*.then((socket) {
-      _socket = socket;
-      socketListen();
-      return true;
-    }).catchError((error) => false);
-    return false;*/
+
+    developer.log("Connected to $ip");
+    
+    socket.listen(
+      dataHandler,
+      onError: errorHandler,
+      cancelOnError: false
+    );
+
+    return true;
   }
 
   Future<void> flush() async {
-    await _socket.flush();
-    _completer = Completer();
+    await socket.flush();
   }
 
   Future<void> close() async {
-    await _socket.flush();
-    await _socket.close();
+    await socket.flush();
+    await socket.close();
   }
 }
 
@@ -109,15 +147,15 @@ class Device {
   String name = "";
   String ip = "";
   List<String> features = List.empty(growable: true);
-  final ESPSocket _espsocket = ESPSocket();
+  final ESPSocket espsocket = ESPSocket();
   bool updatingValues = false;
   int timeoutCount = 0;
 
   Future<String> sendName(String name) async {
-    while (!await _espsocket.connect(ip, defaultPort)) {}
-    await _espsocket.flush();
-    String resp = await _espsocket.sendAndWaitForAnswerTimeout("POST ?wifi=changename&name=$name");
-    await _espsocket.close();
+    while (!await espsocket.connect(ip, defaultPort)) {}
+    await espsocket.flush();
+    String resp = await espsocket.sendAndWaitForAnswerTimeout("POST ?wifi=changename&name=$name");
+    await espsocket.close();
     return resp.split("\n")[0];
   }
 
@@ -166,7 +204,7 @@ class Device {
   }
 
   Future<bool> getFeatures() async {
-    String response = await _espsocket.sendAndWaitForAnswerTimeout("GET ?features");
+    String response = await espsocket.sendAndWaitForAnswerTimeout("GET ?features");
     if (!response.contains("200 OK") || response == "") {
       return false;
     }
@@ -181,14 +219,14 @@ class Device {
   // FUNZIONI PERSONALIZZATE PER L'APPLICAZIONE SPECIFICA
   // FUNZIONI PULSANTE
   Future<String> openCloseValve(String id) async {
-    await _espsocket.flush();
-    String resp = await _espsocket.sendAndWaitForAnswerTimeout("GET ?valve=$id");
+    //await espsocket.flush();
+    String resp = await espsocket.sendAndWaitForAnswerTimeout("GET ?valve=$id");
     if (resp.contains("200 OK")) {
       String isOpen = resp.split("\n")[1];
       if (isOpen == "aperta") {
-      _espsocket.sendAndWaitForAnswerTimeout("POST ?valve=$id&cmd=close");
+        espsocket.sendAndWaitForAnswerTimeout("POST ?valve=$id&cmd=close");
       } else if (isOpen == "chiusa") {
-      _espsocket.sendAndWaitForAnswerTimeout("POST ?valve=$id&cmd=open");
+        espsocket.sendAndWaitForAnswerTimeout("POST ?valve=$id&cmd=open");
       }
     }
 
@@ -213,19 +251,58 @@ late Timer timer;
 late ValueNotifier<bool> generateIOs;
 ValueNotifier<bool> updateIOs = ValueNotifier(false);
 
-bool connect(BuildContext context, Device dev)
-{
-  bool ok = false;
-  dev._espsocket.connect(dev.ip, defaultPort).then((connected) => {
-    if (connected) {
-      ok = true,
-      timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
+Future<bool> connect(BuildContext context, Device dev, [bool updateNowIOs = true]) async {
+  bool connected = await dev.espsocket.connect(dev.ip, defaultPort);
+
+  if (connected) {
+    timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
+      if (updateNowIOs && !dev.updatingValues) {
         updateDirectUserIOs(context, dev);
-      }),
+      }
+    });
+
+    return true;
+  }
+
+  return false;
+}
+
+void startTimer(BuildContext context, Device dev) async {
+  timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
+    if (!dev.updatingValues) {
+      updateDirectUserIOs(context, dev);
     }
   });
+}
 
-  return ok;
+Future<bool> stopUpdate(Device dev) async {
+  const int delayDuration = 5;
+  timer.cancel();
+  int elapsed = 0;
+  while (dev.updatingValues) {
+    await Future.delayed(const Duration(milliseconds: delayDuration));
+    // wait for the update to finish
+    elapsed += delayDuration;
+    if (elapsed > timeout) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Future<bool> waitBusy(Device dev) async {
+  // returns whether the device is not busy
+  const int delayDuration = 5;
+  int elapsed = 0;
+  while (dev.espsocket.isBusy()) {
+    await Future.delayed(const Duration(milliseconds: delayDuration));
+    elapsed += delayDuration;
+    if (elapsed > timeout) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool exit = false;
@@ -252,9 +329,11 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     generateIOs = ValueNotifier(false);
     generateIOs.addListener(_generateIOsListener);
 
-    if (connect(context, widget.device)) {
-      userIOs = _generateDirectUserIOs(widget.device);
-    }
+    connect(context, widget.device).then((connected) {
+      if (connected) {
+        userIOs = _generateDirectUserIOs(widget.device);
+      }
+    });
 
     WidgetsBinding.instance.addObserver(this);
   }
@@ -269,7 +348,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
       }
       generateIOs.removeListener(_generateIOsListener);
       generateIOs.dispose();
-      widget.device._espsocket.close();
+      widget.device.espsocket.close();
     });
 
     WidgetsBinding.instance.removeObserver(this);
@@ -282,11 +361,11 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     state == AppLifecycleState.inactive || state == AppLifecycleState.hidden) {
       // app in background
       Future.microtask(() async {
-        timer.cancel();
         while (widget.device.updatingValues) {
           await Future.delayed(const Duration(milliseconds: 10));
         }
-        widget.device._espsocket.close();
+        timer.cancel();
+        widget.device.espsocket.close();
       });
     } else if (state == AppLifecycleState.resumed) {
       // app in foreground
@@ -349,18 +428,25 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                     child: Icon(Icons.radio_button_checked, color: Color.alphaBlend(Colors.black.withAlpha(220), color))  // Theme.of(context).colorScheme.primary
                     ),
                     onTap: () async {
-                      update = false;
-
-                      while (await Future.delayed(const Duration(milliseconds: 10), () => widget.device.updatingValues)) {
-                        // wait for the update to finish
+                      bool notBusy = await waitBusy(widget.device);
+                      if (!notBusy) {
+                        showPopupOK(context, "Errore", "Il dispositivo è ancora occupato");
+                        return;
                       }
 
-                      widget.device.openCloseValve(switchId).then((statusCode) {
-                        if (statusCode != "200 OK") {
-                          showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
-                        }
-                        update = true;
-                      });
+                      bool stopped = await stopUpdate(widget.device);
+                      if (!stopped) {
+                        showPopupOK(context, "Errore", "Timeout durante l'aggiornamento dei valori");
+                        return;
+                      }
+
+                      String statusCode = await widget.device.openCloseValve(switchId);
+                      if (statusCode != "200 OK") {
+                        showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                      }
+
+                      startTimer(context, widget.device);
+                      //update = true;
                     },
                 ),
               ),
@@ -451,15 +537,26 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                   foregroundColor: Theme.of(context).colorScheme.primary,
                 ),
                 child: Text(buttonText),
-                onPressed: () {
+                onPressed: () async {
                   if (dataToSend == "") {
                     showPopupOK(context, "Errore", "Nessun contenuto inviato.");
                   } else {
-                    widget.device._espsocket.sendAndWaitForAnswer(dataToSend).then((statusCode) {
-                      if (statusCode != "200 OK") {
-                        showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
-                      }
-                    });
+                    bool notBusy = await waitBusy(widget.device);
+                    if (!notBusy) {
+                      showPopupOK(context, "Errore", "Il dispositivo è ancora occupato");
+                      return;
+                    }
+
+                    bool stopped = await stopUpdate(widget.device);
+                    if (!stopped) {
+                      showPopupOK(context, "Errore", "Timeout durante l'aggiornamento dei valori");
+                      return;
+                    }
+
+                    String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout(dataToSend);
+                    if (statusCode != "200 OK") {
+                      showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                    }
                   }
                 }
               ),
@@ -506,33 +603,38 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
             ),
             child: Text(buttonText),
             onPressed: () async {
-              update = false;
-              while (await Future.delayed(const Duration(milliseconds: 10), () => widget.device.updatingValues)) {
-                // wait for the update to finish
+              bool notBusy = await waitBusy(widget.device);
+              if (!notBusy) {
+                showPopupOK(context, "Errore", "Il dispositivo è ancora occupato");
+                return;
+              }
+
+              bool stopped = await stopUpdate(widget.device);
+              if (!stopped) {
+                showPopupOK(context, "Errore", "Timeout durante l'aggiornamento dei valori");
+                return;
               }
 
               if (dataToSend.startsWith("send")) {
                 // dataToSend: sendPOST ?key=<TEXTINPUT>
                 String template = dataToSend.split("send")[1];
-                widget.device._espsocket.sendAndWaitForAnswer("$template${textInputController.text}").then((statusCode) {
-                  if (statusCode.split("\n")[0] != "200 OK") {
-                    showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
-                  }
-                  textInputController.clear();
-                  update = true;
-                });
+                String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout("$template${textInputController.text}");
+                if (statusCode.split("\n")[0] != "200 OK") {
+                  showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                }
+                textInputController.clear();
+                startTimer(context, widget.device);
               } else {
                 if (dataToSend == "") {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     showPopupOK(context, "Errore", "Nessun contenuto inviato.");
                   });
                 } else {
-                  widget.device._espsocket.sendAndWaitForAnswer(dataToSend).then((statusCode) {
-                    if (statusCode.split("\n")[0] != "200 OK") {
-                      showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
-                    }
-                    update = true;
-                  });
+                  String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout(dataToSend);
+                  if (statusCode.split("\n")[0] != "200 OK") {
+                    showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                  }
+                  startTimer(context, widget.device);
                 }
               }
             }
@@ -631,33 +733,38 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
             ),
             child: Text(buttonText),
             onPressed: () async {
-              update = false;
-              while (await Future.delayed(const Duration(milliseconds: 10), () => widget.device.updatingValues)) {
-                // wait for the update to finish
+              bool notBusy = await waitBusy(widget.device);
+              if (!notBusy) {
+                showPopupOK(context, "Errore", "Il dispositivo è ancora occupato");
+                return;
+              }
+
+              bool stopped = await stopUpdate(widget.device);
+              if (!stopped) {
+                showPopupOK(context, "Errore", "Timeout durante l'aggiornamento dei valori");
+                return;
               }
 
               if (dataToSend.startsWith("send")) {
                 // dataToSend: sendPOST ?key=<TEXTINPUT>
                 String template = dataToSend.split("send")[1];
                 String timeToSend = "${padLeft("${startTime.hour}", 2, "0")}:${padLeft("${startTime.minute}", 2, "0")}-${padLeft("${endTime.hour}", 2, "0")}:${padLeft("${endTime.minute}", 2, "0")}";
-                widget.device._espsocket.sendAndWaitForAnswer("$template$timeToSend").then((statusCode) {
-                  if (statusCode.split("\n")[0] != "200 OK") {
-                    showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
-                  }
-                  update = true;
-                });
+                String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout("$template$timeToSend");
+                if (statusCode.split("\n")[0] != "200 OK") {
+                  showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                }
+                update = true;
               } else {
                 if (dataToSend == "") {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     showPopupOK(context, "Errore", "Nessun contenuto inviato.");
                   });
                 } else {
-                  widget.device._espsocket.sendAndWaitForAnswer(dataToSend).then((statusCode) {
-                    if (statusCode.split("\n")[0] != "200 OK") {
-                      showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
-                    }
-                    update = true;
-                  });
+                  String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout(dataToSend);
+                  if (statusCode.split("\n")[0] != "200 OK") {
+                    showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                  }
+                  update = true;
                 }
               }
             }
@@ -788,8 +895,12 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
 void updateDirectUserIOs(BuildContext context, Device dev) async {
   if (exit) return;
   if (update) {
-    dev.updatingValues = true;
-    bool result = await dev.getFeatures().timeout(const Duration(milliseconds: 250), onTimeout: () => false);
+    bool result = false;
+    bool notBusy = await waitBusy(dev);
+    if (notBusy) {
+      dev.updatingValues = true;
+      result = await dev.getFeatures();
+    }
     if (!result)
     {
       dev.timeoutCount++;
@@ -799,27 +910,32 @@ void updateDirectUserIOs(BuildContext context, Device dev) async {
         dev.timeoutCount = 0;
         timer.cancel();
 
-        showPopupOK(
-          context,
-          "Riprova",
-          "Non è stato possibile connettersi a ${dev.ip}. Prova a tornare al menù e aprire di nuovo il dispositivo."
-        );
+        dev.espsocket.socket.destroy();
 
-        ListTile cannotConnect = ListTile(
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text("Impossibile connettersi a ${dev.ip}", style: const TextStyle(fontSize: 16, color: Colors.grey)),
-              ],
-            ),
-        );
+        connect(context, dev, false).then((connected) {
+          showPopupOK(
+            context,
+            "Riprova",
+            "Non è stato possibile connettersi a ${dev.ip}. Prova a tornare al menù e aprire di nuovo il dispositivo."
+          );
 
-        userIOs = List.empty(growable: true);
-        userIOs.add(cannotConnect);
-        updateIOs.value = false;
-        updateIOs.value = true;
+          ListTile cannotConnect = ListTile(
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text("Impossibile connettersi a ${dev.ip}", style: const TextStyle(fontSize: 16, color: Colors.grey)),
+                ],
+              ),
+          );
+
+          userIOs = List.empty(growable: true);
+          userIOs.add(cannotConnect);
+          updateIOs.value = false;
+          updateIOs.value = true;
+        });
       }
     } else {
+      dev.timeoutCount = 0;
       generateIOs.value = true;
       dev.updatingValues = false;
     }

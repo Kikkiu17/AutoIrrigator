@@ -3,7 +3,8 @@ import 'dart:io' show Socket;
 import 'package:espvalve/discovery.dart';
 import 'package:flutter/material.dart';
 import 'device.dart';
-import 'package:flashy_tab_bar2/flashy_tab_bar2.dart';
+//import 'package:flashy_tab_bar2/flashy_tab_bar2.dart';
+import '../flashytabbar/flashy_tab_bar2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'settings.dart';
@@ -231,17 +232,11 @@ class _HomePageState extends State<HomePage> {
         title: Text(titles[_selectedIndex]),
       ),
       body: Center(child: FractionallySizedBox(widthFactor: 0.95, child: pageToRender)),
-      /*body: Column(children: [
-        Expanded(child: pageToRender),
-        ListTile(
-          title: const Text("Aggiorna"),
-          tileColor: theme.colorScheme.surfaceContainerHighest,
-        )
-      ]),*/
       bottomNavigationBar: FlashyTabBar(
-        animationCurve: Curves.linear,
+        animationCurve: Curves.fastEaseInToSlowEaseOut,
+        animationDuration: const Duration(milliseconds: 350),
         selectedIndex: _selectedIndex,
-        iconSize: 30,
+        iconSize: 35,
         showElevation: false,
         backgroundColor: theme.colorScheme.surface,
         onItemSelected: (index) => setState(() {
@@ -264,19 +259,19 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.list),
             activeColor: activeColor,
             inactiveColor: inactiveColor,
-            title: const Text('Lista'),
+            title: const Text('Lista', style: TextStyle(fontSize: 16)),
           ),
           FlashyTabBarItem(
             icon: const Icon(Icons.sensors),
             activeColor: activeColor,
             inactiveColor: inactiveColor,
-            title: const Text('Dispositivo'),
+            title: const Text('Dispositivo', style: TextStyle(fontSize: 16)),
           ),
           FlashyTabBarItem(
             icon: const Icon(Icons.settings),
             activeColor: activeColor,
             inactiveColor: inactiveColor,
-            title: const Text('Impostazioni'),
+            title: const Text('Impostazioni', style: TextStyle(fontSize: 16)),
           ),
         ],
       ),

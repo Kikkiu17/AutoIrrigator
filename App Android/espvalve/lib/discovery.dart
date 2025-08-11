@@ -67,14 +67,18 @@ Future<List<Device>> discoverDevices(List<String> ips) async
     newList = true;
     ips = await scanNetwork();
   }
-
+  
   for (String ip in ips)
   {
     // ip;id
     ip = ip.split(";")[0];
-    ESPSocket espSocket = ESPSocket();
 
-    bool connected = await espSocket.connect(ip, defaultPort);
+    Device tempDev = Device();
+    tempDev.ip = ip;
+
+    bool connected = await tempDev.espsocket.connect(tempDev.ip, defaultPort);
+
+    //bool connected = await espSocket.connect(ip, defaultPort, dataHandler);
 
     if (!connected) {
       if (!newList) {
@@ -89,21 +93,27 @@ Future<List<Device>> discoverDevices(List<String> ips) async
       continue;
     }
 
-    String response = await espSocket.sendAndWaitForAnswerTimeout("GET ?wifi=IP");
+    //String response = await espSocket.sendAndWaitForAnswerTimeout("GET ?features");
+    //espSocket.sendAndWaitForAnswer("GET ?features");
+    //espSocket.socket.write("GET ?features");
+    //while (true) { sleep(Duration(milliseconds: 100)); }
+
+    String response = await tempDev.espsocket.sendAndWaitForAnswerTimeout("GET ?wifi=IP");
     if (!response.contains("200 OK")) {
       // retry
-      response = await espSocket.sendAndWaitForAnswerTimeout("GET ?wifi=IP");
+      sleep(const Duration(milliseconds: 25));
+      response = await tempDev.espsocket.sendAndWaitForAnswerTimeout("GET ?wifi=IP");
     }
     
     if (response.contains("200 OK")) {
       ip = response.split("\n")[1];
     } else {
-      espSocket.close();
+      tempDev.espsocket.close();
       continue;
     }
 
-    Device device = await createDevice(ip, espSocket);
-    espSocket.close();
+    Device device = await createDevice(ip, tempDev.espsocket);
+    tempDev.espsocket.close();
 
     devices.add(device);
   }

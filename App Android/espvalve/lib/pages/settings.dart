@@ -49,7 +49,7 @@ const ListTile loadingTileNoText = ListTile(
 class DefaultSavedSettings {
   final int maxIp = 64;
   final bool darkMode = false;
-  final int scanTimeout = 30; // ms
+  final int scanTimeout = 15; // ms
   final bool isThemeSystem = true;
 }
 
@@ -355,11 +355,9 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               },
             ),
           ),
-          ListTile(
+          /*ListTile(
             title: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                //backgroundColor: Color.alphaBlend(Colors.white.withAlpha(150), Theme.of(context).colorScheme.inversePrimary),
-                //backgroundColor: Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerHigh.withAlpha(30), Theme.of(context).colorScheme.primary),
                 foregroundColor: Theme.of(context).colorScheme.onSurface,
               ),
               child: const Text("Salva"),
@@ -368,12 +366,10 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
                 savedSettings.save();
               }
             )
-          ),
+          ),*/
           ListTile(
             title: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                //backgroundColor: Color.alphaBlend(Colors.white.withAlpha(150), Theme.of(context).colorScheme.inversePrimary),
-                //backgroundColor: Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerHigh.withAlpha(30), Theme.of(context).colorScheme.primary),
                 foregroundColor: Theme.of(context).colorScheme.onSurface,
               ),
               child: const Text("Ripristina a default"),
