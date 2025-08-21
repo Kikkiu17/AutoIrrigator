@@ -31,7 +31,7 @@ void main() async {
   savedSettings.load();
 
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    setWindowTitle('ESPIOT');
+    setWindowTitle('SNSE');
     setWindowMaxSize(const Size(650, 1000));
     setWindowMinSize(const Size(650, 1000));
   }
@@ -49,7 +49,7 @@ class MainApp extends StatelessWidget {
       valueListenable: themeNotifier,
       builder: (context, mode, _) {
         return MaterialApp(
-          title: 'ESP Valve',
+          title: 'SNSE',
           theme: light,
           darkTheme: dark,
           themeMode: mode,

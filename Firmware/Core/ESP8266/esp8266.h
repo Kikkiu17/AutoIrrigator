@@ -12,6 +12,12 @@
 #include "usart.h"
 #include "../settings.h"
 
+typedef uint8_t bool;
+#define true 1
+#define false 0
+
+extern bool WIFI_response_sent;
+
 typedef enum
 {
 	GET 		= 'G',
@@ -24,6 +30,7 @@ typedef enum
 	TIMEOUT 	= 1,
 	OK 			= 2,
 	NULVAL		= 3,
+	WAITING		= 4,
 } Response_t;
 
 typedef struct
@@ -85,6 +92,7 @@ uint32_t WIFI_GetTimeSeconds(WIFI_t* wifi);
 Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeout);
 Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, uint32_t body_length);
 Response_t WIFI_EnableNTPServer(WIFI_t* wifi, int8_t time_offset);
+void WIFI_ResetComm(WIFI_t* wifi, Connection_t* conn);
 char* WIFI_RequestHasKey(Connection_t* conn, char* desired_key);
 char* WIFI_RequestKeyHasValue(Connection_t* conn, char* request_key_ptr, char* value);
 char* WIFI_GetKeyValue(Connection_t* conn, char* request_key_ptr, uint32_t* value_size);

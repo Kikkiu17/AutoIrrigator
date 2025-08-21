@@ -5,7 +5,7 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'pages/settings.dart';
 
 const String idTemplate = "ESPDEVICE";
-int timeout = 1000; // ms
+int timeout = 250; // ms
 
 Future<Device> createDevice(String ip, ESPSocket socket) async
 {
@@ -13,7 +13,6 @@ Future<Device> createDevice(String ip, ESPSocket socket) async
   device.ip = ip;
 
   // --- GET DEVICE ID ---
-  await Future.delayed(const Duration(milliseconds: 10));
   String response = await socket.sendAndWaitForAnswerTimeout("GET ?wifi=ID");
   if (!response.contains("200 OK")) {
     return device;
@@ -21,7 +20,6 @@ Future<Device> createDevice(String ip, ESPSocket socket) async
   device.id = response.split("\n")[1];
 
   // --- GET DEVICE NAME ---
-  await Future.delayed(const Duration(milliseconds: 10));
   response = await socket.sendAndWaitForAnswerTimeout("GET ?wifi=name");
   if (!response.contains("200 OK")) {
     return device;
@@ -29,7 +27,6 @@ Future<Device> createDevice(String ip, ESPSocket socket) async
   device.name = response.split("\n")[1];
   
   // --- GET DEVICE FEATURES ---
-  await Future.delayed(const Duration(milliseconds: 10));
   response = await socket.sendAndWaitForAnswerTimeout("GET ?features");
   if (!response.contains("200 OK")) {
     return device;
@@ -78,8 +75,6 @@ Future<List<Device>> discoverDevices(List<String> ips) async
 
     bool connected = await tempDev.espsocket.connect(tempDev.ip, defaultPort);
 
-    //bool connected = await espSocket.connect(ip, defaultPort, dataHandler);
-
     if (!connected) {
       if (!newList) {
         // il dispositivo non è raggiungibile, lo aggiungo come offline
@@ -92,11 +87,6 @@ Future<List<Device>> discoverDevices(List<String> ips) async
       }
       continue;
     }
-
-    //String response = await espSocket.sendAndWaitForAnswerTimeout("GET ?features");
-    //espSocket.sendAndWaitForAnswer("GET ?features");
-    //espSocket.socket.write("GET ?features");
-    //while (true) { sleep(Duration(milliseconds: 100)); }
 
     String response = await tempDev.espsocket.sendAndWaitForAnswerTimeout("GET ?wifi=IP");
     if (!response.contains("200 OK")) {

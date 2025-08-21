@@ -7,6 +7,8 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'dart:developer' as developer;
 import '../main.dart'; // To access themeNotifier
 
+const String dataSeparator = "\$";
+
 int gatewayIpLast = 0;
 String readableMaxIp = "";
 bool darkModeSetByUser = false;
@@ -17,34 +19,6 @@ const int defaultPort = 34677; // default port for ESP devices
 // Helper encode/decode functions:
 String encode(Map<String, dynamic> map) => jsonEncode(map);
 Map<String, dynamic> decode(String str) => jsonDecode(str);
-
-const ListTile loadingTile = ListTile(
-    title: Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      SizedBox(
-      width: 24,
-      height: 24,
-      child: CircularProgressIndicator(strokeWidth: 2),
-      ),
-      SizedBox(width: 16),
-      Text("Caricamento..."),
-    ],
-  ),
-);
-
-const ListTile loadingTileNoText = ListTile(
-    title: Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      SizedBox(
-      width: 24,
-      height: 24,
-      child: CircularProgressIndicator(strokeWidth: 2),
-      ),
-    ],
-  ),
-);
 
 class DefaultSavedSettings {
   final int maxIp = 64;
@@ -301,7 +275,7 @@ class _SettingsPageState extends State<SettingsPage> with WidgetsBindingObserver
               child: TextField(
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
-                  hintText: savedSettings.getScanTimeout().toString(),
+                  hintText: "${savedSettings.getScanTimeout().toString()} ms",
                   isDense: true,
                 ),
                 keyboardType: TextInputType.number,

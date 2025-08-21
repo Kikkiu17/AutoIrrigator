@@ -7,6 +7,33 @@
 
 #include "wifihandler.h"
 
+Notification_t notification;
+
+void NOTIFICATION_Set(char* text, uint8_t size)
+{
+	notification.text = text;
+	notification.size = size;
+}
+
+void NOTIFICATION_Reset()
+{
+	notification.text = NULL;
+	notification.size = 0;
+}
+
+Response_t WIFIHANDLER_HandleNotificationRequest(Connection_t* conn, char* key_ptr)
+{
+	if (conn->request_type == GET)
+	{
+		if (notification.size == 0 || notification.text == NULL)
+			return WIFI_SendResponse(conn, "200 OK", "Vuoto", 5);
+		else
+			return WIFI_SendResponse(conn, "200 OK", notification.text, notification.size);
+	}
+
+	return WIFI_SendResponse(conn, "400 Bad Request", "Sono supportate solo richieste NOTIFICATION GET", 47);
+}
+
 Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 {
 	if (WIFI_RequestKeyHasValue(conn, command_ptr, "help"))
@@ -28,6 +55,7 @@ Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 				else
 				{
 					WIFI_SetName(conn->wifi, name_ptr);
+					FLASH_WriteSaveData();	// save name
 					return WIFI_SendResponse(conn, "200 OK", "Nome cambiato", 13);
 				}
 			}
@@ -92,6 +120,7 @@ Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_li
 	memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
 	sprintf(conn->wifi->buf, features_template,
 			valve_list[3].flow->lt_per_hour,	// il flussimetro generale è associato alla valvola 4
+			bat.voltage_integer, bat.voltage_decimal,
 			valve_list[0].isOpen, valve_list[0].flow->lt_per_hour,
 			valve_list[1].isOpen, valve_list[1].flow->lt_per_hour,
 			valve_list[2].isOpen, valve_list[2].flow->lt_per_hour,
@@ -174,7 +203,7 @@ Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, c
 				strcat(wbuf, ",");
 		}
 
-		WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
+		return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
 	}
 	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "hourprob"))
 	{
@@ -189,11 +218,11 @@ Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, c
 				strcat(wbuf, ",");
 		}
 
-		WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
+		return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
 	}
 	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "updatetime"))
 	{
-		WIFI_SendResponse(conn, "200 OK", wx->forecast_time, sizeof(wx->forecast_time));
+		return WIFI_SendResponse(conn, "200 OK", wx->forecast_time, sizeof(wx->forecast_time));
 	}
 
 	return WIFI_SendResponse(conn, "400 Bad Request", "Tipo di richiesta non trovato", 29);

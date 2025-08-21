@@ -71,6 +71,8 @@ void Error_Handler(void);
 #define VALVE4_GPIO_Port GPIOA
 #define FLOW1_Pin GPIO_PIN_4
 #define FLOW1_GPIO_Port GPIOA
+#define BAT_Pin GPIO_PIN_5
+#define BAT_GPIO_Port GPIOA
 #define FLOW4_Pin GPIO_PIN_6
 #define FLOW4_GPIO_Port GPIOA
 #define FLOW3_Pin GPIO_PIN_7

@@ -8,6 +8,10 @@
 #ifndef SETTINGS_H_
 #define SETTINGS_H_
 
+typedef uint8_t bool;
+#define true 1
+#define false 0
+
 // ==========================================================================================
 // 											FLASH
 // ==========================================================================================
@@ -48,6 +52,14 @@ static const char ESP_NAME[] = "Hub irrigazione";
 #define ESP_RST_PORT ESPRST_GPIO_Port
 #define ESP_RST_PIN ESPRST_Pin
 
+typedef struct notif
+{
+	char* text;
+	uint8_t size;
+} Notification_t;
+
+extern Notification_t notification;
+
 // ==========================================================================================
 // 									IRRIGATION / SCHEDULE
 // ==========================================================================================
@@ -85,6 +97,7 @@ typedef struct valve
 	uint16_t 			gpio_pin;
 	struct flow* 		flow;
 	struct schedule* 	schedule;
+	bool 				has_manual_override;
 } Valve_t;
 
 // ==========================================================================================
@@ -92,6 +105,7 @@ typedef struct valve
 // ==========================================================================================
 #define PROBABLE_PRECIPITATION 40			// %, PROB40
 #define LOW_PROB_PRECIPITATION 30			// %, PROB30
+#define PRECIPITATION_THRESHOLD	1			// millimeters
 
 // ==========================================================================================
 // 										HELP MESSAGES
@@ -165,6 +179,14 @@ typedef struct sdata
 extern SaveData_t savedata;
 
 // ==========================================================================================
+// 											OTHER
+// ==========================================================================================
+
+// all times are in milliseconds
+#define STROBE_DELAY 4000
+#define STROBE_DURATION 12
+
+// ==========================================================================================
 // 										COMM TEMPLATE
 // ==========================================================================================
 
@@ -194,9 +216,20 @@ extern SaveData_t savedata;
  * timestamp			timestampX$text$d text
  */
 
+typedef struct bat
+{
+	uint16_t voltage_mv;
+	uint16_t voltage_integer;
+	uint16_t voltage_decimal;
+
+} Battery_t;
+
+extern Battery_t bat;
+
 static const char FEATURES_TEMPLATE[] =
 {
 		"sensor1$Flusso totale$%d litri/h;"
+		"sensor2$Tensione batteria$%d,%d V;"
 		"switch1$Ovest,status$%d,sensor$Litri/h$%d;"
 		"switch2$Sud,status$%d,sensor$Litri/h$%d;"
 		"switch3$Sud-Est,status$%d,sensor$Litri/h$%d;"
@@ -211,6 +244,16 @@ static const char FEATURES_TEMPLATE[] =
 		"timepicker4$%s,button$Imposta$sendPOST ?valve=4&schedule=;"
 		//"textinput1$NOME 1,button$Imposta$sendPOST ?valve=1&cmd=;"
 		"timestamp1$Tempo CPU$%d ms;"
+};
+
+static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] =
+{
+		"1$Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore"
+};
+
+static const char NOTIFICATION_LOW_BATTERY[] =
+{
+		"2$Batteria scarica!"
 };
 
 #endif /* SETTINGS_H_ */

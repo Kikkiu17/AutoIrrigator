@@ -52,7 +52,6 @@ void FLASH_WriteSaveData()
 void FLASH_ReadSaveData()
 {
 	uint32_t read_addr = LAST_PAGE_ADDRESS;
-	SaveData_t* ok = ((SaveData_t*)read_addr);
 	memcpy(&savedata, ((SaveData_t*)read_addr), sizeof(SaveData_t));
 }
 

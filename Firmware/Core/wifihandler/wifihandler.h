@@ -21,5 +21,9 @@ Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr);
 Response_t WIFIHANDLER_HandleHelpRequest(Connection_t* conn);
 Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* features_template);
 Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, char* key_ptr);
+Response_t WIFIHANDLER_HandleNotificationRequest(Connection_t* conn, char* key_ptr);
+
+void NOTIFICATION_Reset();
+void NOTIFICATION_Set(char* text, uint8_t size);
 
 #endif /* WIFI_WIFIHANDLER_H_ */

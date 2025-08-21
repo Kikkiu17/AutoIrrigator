@@ -13,6 +13,15 @@
 #include <time.h>
 
 char uart_buffer[UART_BUFFER_SIZE];
+bool WIFI_response_sent = false;
+
+void WIFI_ResetComm(WIFI_t* wifi, Connection_t* conn)
+{
+	ESP8266_ClearBuffer();
+	memset(wifi->buf, 0, WIFI_BUF_MAX_SIZE);
+	memset(conn->request, 0, REQUEST_MAX_SIZE);
+	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
+}
 
 int32_t bufferToInt(char* buf, uint32_t size)
 {
@@ -364,8 +373,6 @@ Response_t WIFI_SetName(WIFI_t* wifi, char* name)
 		memcpy(wifi->name, name, name_size);
 	}
 
-	FLASH_WriteSaveData();
-
 	return OK;
 }
 
@@ -548,6 +555,8 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
 		// retry
 		HAL_UART_Transmit(&STM_UART, (uint8_t*)conn->response_buffer, total_response_length, UART_TX_TIMEOUT);
 	}
+
+	WIFI_response_sent = true;
 
 	return atstatus;
 }

@@ -1,6 +1,6 @@
 import 'dart:io' show Socket;
 
-import 'package:espvalve/discovery.dart';
+import '../discovery.dart';
 import 'package:flutter/material.dart';
 import 'device.dart';
 //import 'package:flashy_tab_bar2/flashy_tab_bar2.dart';
@@ -10,40 +10,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'settings.dart';
 import '../main.dart';
 
+import '../tiles/tiles.dart';
+
 const int maxPages = 3;
 const int homePageIndex = 0;
 const int devicePageIndex = 1;
 const int settingsPageIndex = 2;
-
-const ListTile loadingTile = ListTile(
-  title: Padding(
-    padding: EdgeInsets.all(8.0),
-      child: Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        SizedBox(width: 16),
-        Text("Caricamento..."),
-      ],
-      ),
-  )
-);
-
-const ListTile noDeviceTile = ListTile(
-  title: Padding(
-    padding: EdgeInsets.all(8.0),
-      child: Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text("Nessun dispositivo selezionato", style: TextStyle(fontSize: 16, color: Colors.grey)),
-      ],
-      ),
-  )
-);
 
 class HomePage extends StatefulWidget
 {
@@ -71,7 +43,7 @@ class _HomePageState extends State<HomePage> {
 
 @override
   void initState() {
-    pages[devicePageIndex] = noDeviceTile;
+    pages[devicePageIndex] = grayTextCenteredTile("Nessun dispositivo selezionato");
     pages[settingsPageIndex] = const SettingsPage();
     _createDeviceList();
     super.initState();
@@ -114,24 +86,29 @@ class _HomePageState extends State<HomePage> {
         ipsAndIds.add("${dev.ip};${dev.id}");
       }
 
-      cardList.add(
-        const Padding(padding: EdgeInsets.only(top: 8.0))
-      );
 
-      // list update button
-      cardList.add(
-      ListTile(
-          title: ElevatedButton(
-            child: const Text("Aggiorna"),
-            onPressed: () {
-              setState(() {
-                _updateExistingIDs = true;
-                _createDeviceList();
-              });
-            }
+      if (cardList.isNotEmpty) {
+        cardList.add(
+          const Padding(padding: EdgeInsets.only(top: 8.0))
+        );
+
+        // list update button
+        cardList.add(
+        ListTile(
+            title: ElevatedButton(
+              child: const Text("Aggiorna"),
+              onPressed: () {
+                setState(() {
+                  _updateExistingIDs = true;
+                  _createDeviceList();
+                });
+              }
+            )
           )
-        )
-      );
+        );
+      } else {
+        cardList.add(grayTextCenteredTile("Nessun dispositivo trovato"));
+      }
 
       // discovery button
       cardList.add(
@@ -230,6 +207,18 @@ class _HomePageState extends State<HomePage> {
     return Scaffold (
       appBar: AppBar(
         title: Text(titles[_selectedIndex]),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 18.0),
+            child: (_selectedIndex == homePageIndex) ? const Text("") :
+            IconButton(
+              icon: const Icon(Icons.notifications),
+              onPressed: () {
+                forceShowNotification = true;
+              },
+            )
+          ),
+        ],
       ),
       body: Center(child: FractionallySizedBox(widthFactor: 0.95, child: pageToRender)),
       bottomNavigationBar: FlashyTabBar(

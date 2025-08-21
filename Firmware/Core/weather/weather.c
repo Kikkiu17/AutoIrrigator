@@ -80,14 +80,14 @@ uint8_t WEATHER_GetPrecipitation(Weather_t* weather, char* uart_buffer, char* ti
 	prec_now_end_ptr -= 1;
 	uint8_t prec_width = prec_now_end_ptr - prec_now_ptr + 1;
 	uint32_t precipitation_now = 0;
-	// get precipitation microns
+	// get precipitation millimeters
 	for (uint8_t i = 0; i < prec_width; i++)
 	{
-		if (prec_now_ptr[i] == '.') continue;
+		if (prec_now_ptr[i] == '.') break;
 		precipitation_now *= 10;
 		precipitation_now += prec_now_ptr[i] - '0';
 	}
-	weather->current_precipitation = precipitation_now * 10;	// microns
+	weather->current_precipitation = precipitation_now;	// millimeters
 
 	// GET PRECIPITATIONS
 	char* prec_ptr = strstr(uart_buffer, "precipitation\":[");	// GET HOURLY PREC
@@ -112,13 +112,14 @@ uint8_t WEATHER_GetPrecipitation(Weather_t* weather, char* uart_buffer, char* ti
 			if (*h_ptr == '.')
 			{
 				h_ptr++;
-				continue;
+				break;
 			}
 			n *= 10;
 			n += *(h_ptr) - '0';
 			h_ptr++;
 		}
-		weather->hourly_precipitation[h] = n * 10; // microns
+		h_ptr += 2;
+		weather->hourly_precipitation[h] = n; // millimeters
 
 		//												 v
 		// h_ptr here points to the comma. example: ...12,23,27
@@ -153,7 +154,7 @@ uint8_t WEATHER_GetPrecipitationProbability(Weather_t* weather, char* uart_buffe
 			n += *(h_ptr) - '0';
 			h_ptr++;
 		}
-		weather->hourly_precipitation_prob[h] = n; // microns
+		weather->hourly_precipitation_prob[h] = n;
 
 		//												 v
 		// h_ptr here points to the comma. example: ...12,23,27
@@ -217,6 +218,27 @@ int8_t WEATHER_GetLowProbPrecipitation(Weather_t* wx, uint8_t start_hour)
 		uint8_t h_precipitation = wx->hourly_precipitation_prob[hour];
 		if (h_precipitation >= LOW_PROB_PRECIPITATION)
 			return hour;
+	}
+	return -1;
+}
+
+int8_t WEATHER_GetTodayLastPrecipitation(Weather_t* wx)
+{
+	int8_t last_precipitation_hour = -1;
+	for (uint8_t h = 0; h < 24; h++)
+	{
+		if (wx->hourly_precipitation[h] > PRECIPITATION_THRESHOLD)
+			last_precipitation_hour = h;
+	}
+	return last_precipitation_hour;
+}
+
+int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx)
+{
+	for (uint8_t h = 0; h < 24; h++)
+	{
+		if (wx->hourly_precipitation[h] > PRECIPITATION_THRESHOLD)
+			return h;
 	}
 	return -1;
 }

@@ -18,14 +18,16 @@ typedef struct weather
 	uint8_t last_update_status;				// update successful (1) or not (0)
 	char forecast_date[10];					// yyyy-mm-dd
 	char forecast_time[5];					// hh:mm
-	uint32_t current_precipitation;			// microns
+	uint32_t current_precipitation;			// millimeters
 	uint8_t forecast_hour;					// h
-	uint32_t hourly_precipitation[24];		// microns
+	uint32_t hourly_precipitation[24];		// millimeters
 	uint8_t hourly_precipitation_prob[24];	// %
 } Weather_t;
 
 uint8_t WEATHER_GetForecast(Weather_t* weather, char* uart_buffer);
 int8_t WEATHER_GetProbablePrecipitation(Weather_t* wx, uint8_t start_hour);
 int8_t WEATHER_GetLowProbPrecipitation(Weather_t* wx, uint8_t start_hour);
+int8_t WEATHER_GetTodayLastPrecipitation(Weather_t* wx);
+int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx);
 
 #endif /* WEATHER_WEATHER_H_ */

@@ -39,17 +39,17 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+Battery_t bat;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-//#define VALVES_NUM 4
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define BAT_ADC_CALIBRATION_VALUE 36 / 10
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -74,10 +74,12 @@ Schedule_t schedule3;
 Schedule_t schedule4;
 
 Weather_t weather;
+int8_t yesterday_last_precipitation_hour;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void BATTERY_GetVoltage();
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -188,6 +190,8 @@ int main(void)
 
   WEATHER_GetForecast(&weather, ESP8266_GetBuffer());
   SCHEDULE_ReadFromFlash(valve_list, VALVES_NUM);
+
+  HAL_ADCEx_Calibration_Start(&hadc1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -197,6 +201,9 @@ int main(void)
   uint8_t strobeoff = 0;
   while (1)
   {
+	  BATTERY_GetVoltage();
+
+	  atstatus = WAITING;
 	  // HANDLE WIFI CONNECTION
 	  atstatus = WIFI_ReceiveRequest(&wifi, &conn, AT_SHORT_TIMEOUT);
 	  if (atstatus == OK)
@@ -220,6 +227,8 @@ int main(void)
 		  {
 			  if ((key_ptr = WIFI_RequestHasKey(&conn, "features")))
 				  WIFIHANDLER_HandleFeaturePacket(&conn, valve_list, VALVES_NUM, (char*)FEATURES_TEMPLATE);
+			  else if ((key_ptr = WIFI_RequestHasKey(&conn, "notification")))
+				  WIFIHANDLER_HandleNotificationRequest(&conn, key_ptr);
 			  else if ((key_ptr = WIFI_RequestHasKey(&conn, "weather")))
 				  WIFIHANDLER_HandleWeatherRequest(&weather, &conn, key_ptr);
 			  else
@@ -237,17 +246,28 @@ int main(void)
 	  else if (atstatus != TIMEOUT)
 	  {
 		  sprintf(wifi.buf, "Status: %d", atstatus);
+		  WIFI_ResetComm(&wifi, &conn);
 		  WIFI_SendResponse(&conn, "500 Internal server error", wifi.buf, strlen(wifi.buf));
 	  }
 
-	  if (uwTick - strobeon > 5000)
+	  if (!WIFI_response_sent)
+	  {
+		  if (atstatus == WAITING)
+		  {
+			  WIFI_ResetComm(&wifi, &conn);
+		  }
+	  }
+	  else
+		  WIFI_response_sent = false;
+
+	  if (uwTick - strobeon > STROBE_DELAY)
 	  {
 		  strobeon = uwTick;
 		  strobeoff = 1;
 		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 	  }
 
-	  if (strobeoff && uwTick - strobeon > 1)
+	  if (strobeoff && uwTick - strobeon > STROBE_DURATION)
 	  {
 		  strobeoff = 0;
 		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
@@ -271,35 +291,62 @@ int main(void)
 		  uint8_t seconds = WIFI_GetTimeSeconds(&wifi);
 		  timestamp = uwTick - seconds * 1000;
 
+		  // --------- UPDATE FORECAST ---------
 		  if (time_minute % 15 == 0)
 			  WEATHER_GetForecast(&weather, ESP8266_GetBuffer());
 
-		  uint8_t will_rain = 0;
-		  for (uint32_t i = 0; i < 24; i++)
+		  if (time_hour == 23)
+			  yesterday_last_precipitation_hour = WEATHER_GetTodayLastPrecipitation(&weather);
+
+		  // --------- KEEP VALVES CLOSED IF IT RAINED LESS THAN 12 HOURS AGO ---------
+		  bool keep_valves_closed = false;
+		  if (yesterday_last_precipitation_hour != -1)
 		  {
-			  if (weather.hourly_precipitation[i] / 1000 > 1)	// more than 1 mm
-			  {
-				  will_rain = 1;
-				  break;
-			  }
+			  uint8_t time_diff_past = 24 - yesterday_last_precipitation_hour + time_hour;
+			  if (time_diff_past <= 12)
+				  keep_valves_closed = true;
 		  }
 
+		  // --------- KEEP VALVES CLOSED IF IT WILL RAIN IN LESS THAN 12 HOURS ---------
+		  uint8_t time_diff_future = WEATHER_GetTodayNextPrecipitation(&weather) - time_hour;
+		  if (time_diff_future <= 12)
+			  keep_valves_closed = true;
+
+		  if (weather.current_precipitation >= PRECIPITATION_THRESHOLD)
+			  keep_valves_closed = true;
+
+		  // --------- CLOSE/OPEN VALVES ---------
 		  for (uint32_t i = 0; i < VALVES_NUM; i++)
 		  {
 			  Valve_t* valve = &(valve_list[i]);
 
-			  if (will_rain)
+			  if (keep_valves_closed)
 			  {
-				  VALVE_Close(valve);
+				  NOTIFICATION_Set((char*)NOTIFICATION_WEATHER_NO_VALVE_OPEN, sizeof(NOTIFICATION_WEATHER_NO_VALVE_OPEN));
+
+				  if (!valve->has_manual_override)
+					  VALVE_Close(valve);
 				  continue;
 			  }
+			  else if (notification.text == (char*)NOTIFICATION_WEATHER_NO_VALVE_OPEN)
+				  NOTIFICATION_Reset();
 
 			  if (time_hour == valve->schedule->hour_close && time_minute == valve->schedule->minute_close)
+			  {
+				  valve->has_manual_override = false;
 				  VALVE_Close(valve);
+			  }
 			  else if (time_hour == valve->schedule->hour_open && time_minute == valve->schedule->minute_open)
+			  {
+				  valve->has_manual_override = false;
 				  VALVE_Open(valve);
+			  }
 		  }
 
+		  if (bat.voltage_integer <= 11 && bat.voltage_decimal <= 50)
+			  NOTIFICATION_Set((char*)NOTIFICATION_LOW_BATTERY, sizeof(NOTIFICATION_LOW_BATTERY));
+		  else if (notification.text == (char*)NOTIFICATION_LOW_BATTERY)
+			  NOTIFICATION_Reset();
 	  }
     /* USER CODE END WHILE */
 
@@ -354,6 +401,15 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void BATTERY_GetVoltage()
+{
+	HAL_ADC_Start(&hadc1);
+	HAL_ADC_PollForConversion(&hadc1, 250);
+	bat.voltage_mv = HAL_ADC_GetValue(&hadc1) * BAT_ADC_CALIBRATION_VALUE;
+	bat.voltage_integer = bat.voltage_mv / 1000;
+	bat.voltage_decimal = (bat.voltage_mv - bat.voltage_integer * 1000) / 10;
+}
+
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM14 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)

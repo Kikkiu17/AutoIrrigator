@@ -1,6 +1,6 @@
 #MicroXplorer Configuration settings - do not modify
 ADC1.Channel-0\#ChannelRegularConversion=ADC_CHANNEL_5
-ADC1.IPParameters=Rank-0\#ChannelRegularConversion,Channel-0\#ChannelRegularConversion,SamplingTime-0\#ChannelRegularConversion,NbrOfConversionFlag,master,SelectedChannel
+ADC1.IPParameters=Rank-0\#ChannelRegularConversion,master,Channel-0\#ChannelRegularConversion,SelectedChannel,SamplingTime-0\#ChannelRegularConversion,NbrOfConversionFlag
 ADC1.NbrOfConversionFlag=1
 ADC1.Rank-0\#ChannelRegularConversion=1
 ADC1.SamplingTime-0\#ChannelRegularConversion=ADC_SAMPLINGTIME_COMMON_1
@@ -116,7 +116,8 @@ PA4.GPIOParameters=GPIO_PuPd,GPIO_Label
 PA4.GPIO_Label=FLOW1
 PA4.GPIO_PuPd=GPIO_PULLUP
 PA4.Signal=S_TIM14_CH1
-PA5.Locked=true
+PA5.GPIOParameters=GPIO_Label
+PA5.GPIO_Label=BAT
 PA5.Mode=IN5
 PA5.Signal=ADC1_IN5
 PA6.GPIOParameters=GPIO_PuPd,GPIO_Label

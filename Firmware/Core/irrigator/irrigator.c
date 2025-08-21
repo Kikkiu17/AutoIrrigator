@@ -52,7 +52,15 @@ void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb)
 
 	for (uint8_t i = 0; i < valves_nb; i++)
 	{
-		memcpy(valve_list[i].schedule->text, savedata.schedules + SCHEDULE_TIME_SIZE * i, SCHEDULE_TIME_SIZE);
+		Schedule_t* schedule = valve_list[i].schedule;
+		char* new_schedule = savedata.schedules + SCHEDULE_TIME_SIZE * i;
+		// hh:mm-hh:mm
+		schedule->hour_open = bufferToInt(new_schedule, 2);
+		schedule->minute_open = bufferToInt(new_schedule + 3, 2);
+		schedule->hour_close = bufferToInt(new_schedule + 6, 2);
+		schedule->minute_close = bufferToInt(new_schedule + 9, 2);
+		memcpy(schedule->text, new_schedule, SCHEDULE_TIME_SIZE);
+		__asm__("nop");
 	}
 }
 
@@ -173,7 +181,6 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 			SCHEDULE_Save(valve_list, list_size);
 			return WIFI_SendResponse(conn, "200 OK", "Programmazione impostata", 24);
 		}
-
 	}
 	else if ((cmd_key_ptr = WIFI_RequestHasKey(conn, "cmd")) == NULL)
 		return WIFI_SendResponse(conn, "400 Bad Request", "Comando non trovato", 19);
@@ -198,11 +205,13 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	if (WIFI_RequestKeyHasValue(conn, cmd_key_ptr, "open"))
 	{
 		VALVE_Open(valve);
+		valve->has_manual_override = true;
 		return WIFI_SendResponse(conn, "200 OK", "Valvola aperta", 14);
 	}
 	else if(WIFI_RequestKeyHasValue(conn, cmd_key_ptr, "close"))
 	{
 		VALVE_Close(valve);
+		valve->has_manual_override = false;
 		return WIFI_SendResponse(conn, "200 OK", "Valvola chiusa", 14);
 	}
 	else
@@ -217,6 +226,7 @@ void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id, 
 	memcpy(valve->status, "chiusa", 6);
 	valve->gpio_port = valve_port;
 	valve->gpio_pin = valve_pin;
+	valve->has_manual_override = false;
 }
 
 void VALVE_Open(Valve_t* valve)

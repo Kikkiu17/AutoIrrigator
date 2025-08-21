@@ -107,8 +107,7 @@ class FlashyTabBarItem {
 
 class _FlashTabBarItem extends StatelessWidget {
   const _FlashTabBarItem(
-      {super.key,
-      required this.item,
+      {required this.item,
       required this.isSelected,
       required this.tabBarHeight,
       required this.backgroundColor,

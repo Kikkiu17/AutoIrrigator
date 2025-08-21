@@ -3,16 +3,20 @@
 
 import 'dart:io';
 
-import 'package:espvalve/pages/settings.dart';
 import 'package:flutter/material.dart';
 import '../discovery.dart';
+import 'settings.dart';
 
 import 'dart:developer' as developer;
 import 'dart:async';
 
+import '../tiles/tiles.dart';
+
 const int updateTime = 250; // ms
 const int maxTimeouts = 5;
 bool update = true;
+
+bool forceShowNotification = false;
 
 void showPopupOK(BuildContext context, String title, String content) {
   showDialog(
@@ -36,6 +40,10 @@ class ESPSocket {
   static bool _dataReceived = false;
   static bool _error = false;
   static bool _busy = false;
+
+  void setBusy(bool value) {
+    _busy = value;
+  }
 
   bool isBusy() {
     return _busy;
@@ -81,10 +89,11 @@ class ESPSocket {
       elapsed += 10;
     }
 
+    _busy = false;
+
     if (_error) {
       _dataReceived = false;
       _error = false;
-      _busy = false;
       return "";
     }
 
@@ -93,7 +102,6 @@ class ESPSocket {
     }
 
     _dataReceived = false;
-    _busy = false;
     return _answer;
   }
 
@@ -110,18 +118,15 @@ class ESPSocket {
   }*/
 
   Future<bool> connect(String ip, int port) async {
-    socket = await Socket.connect(ip, defaultPort).catchError((Object e, StackTrace stackTrace) {
-      developer.log("Error connecting to socket: $e", stackTrace: stackTrace);
-      _error = true;
-      throw e;
-    });
-
-    if (_error) {
-      _error = false;
+    try {
+      socket = await Socket.connect(ip, defaultPort);
+    } catch (e) {
+      developer.log("Error connecting to socket: $e");
       return false;
     }
 
     developer.log("Connected to $ip");
+    _busy = false;
     
     socket.listen(
       dataHandler,
@@ -133,10 +138,12 @@ class ESPSocket {
   }
 
   Future<void> flush() async {
+    _busy = false;
     await socket.flush();
   }
 
   Future<void> close() async {
+    _busy = false;
     await socket.flush();
     await socket.close();
   }
@@ -149,7 +156,7 @@ class Device {
   List<String> features = List.empty(growable: true);
   final ESPSocket espsocket = ESPSocket();
   bool updatingValues = false;
-  int timeoutCount = 0;
+  int _lastNotificationID = 0;
 
   Future<String> sendName(String name) async {
     while (!await espsocket.connect(ip, defaultPort)) {}
@@ -216,6 +223,75 @@ class Device {
     return DevicePage(device: this);
   }
 
+  Future<String> getNotification(bool showAnyway) async {
+    String response = await espsocket.sendAndWaitForAnswerTimeout("GET ?notification");
+    if (!response.contains("200 OK") || response.contains("Vuoto")) {
+      return "";
+    }
+
+    try {
+      response = response.split("200 OK")[1].trim();
+      int notificationID = int.parse(response.split(dataSeparator)[0]);
+
+      if (notificationID != _lastNotificationID || showAnyway) {
+        _lastNotificationID = notificationID;
+        return response.split(dataSeparator)[1];
+      }
+    } catch (e) {
+      return "";
+    }
+
+    return "";
+  }
+
+  void showNotification(BuildContext context, String notificationText) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text("Notifica"),
+        content: Text(notificationText),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'OK'),
+            child: const Text('OK'),
+          ),
+        ],
+      )
+    );
+  }
+
+  Future<bool> getAndShowNotification(BuildContext context, bool showAnyway) async {
+    String notificationText = await getNotification(showAnyway);
+    if (notificationText != "" || showAnyway) {
+      if (context.mounted) {
+        if (notificationText == "" && showAnyway) {
+          showNoNewNotifications(context);
+        } else {
+          showNotification(context, notificationText);
+        }
+        showAnyway = false;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void showNoNewNotifications(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text("Nessuna nuova notifica"),
+        content: const Text("Non ci sono notifiche"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'OK'),
+            child: const Text('OK'),
+          ),
+        ],
+      )
+    );
+  }
+
   // FUNZIONI PERSONALIZZATE PER L'APPLICAZIONE SPECIFICA
   // FUNZIONI PULSANTE
   Future<String> openCloseValve(String id) async {
@@ -251,35 +327,29 @@ late Timer timer;
 late ValueNotifier<bool> generateIOs;
 ValueNotifier<bool> updateIOs = ValueNotifier(false);
 
-Future<bool> connect(BuildContext context, Device dev, [bool updateNowIOs = true]) async {
+Future<bool> connect(BuildContext context, Device dev) async {
   bool connected = await dev.espsocket.connect(dev.ip, defaultPort);
 
   if (connected) {
-    timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
-      if (updateNowIOs && !dev.updatingValues) {
-        updateDirectUserIOs(context, dev);
-      }
-    });
-
+    developer.log("Starting");
+    startUpdate(context, dev);
     return true;
   }
 
   return false;
 }
 
-void startTimer(BuildContext context, Device dev) async {
-  timer = Timer.periodic(const Duration(milliseconds: updateTime), (timer) {
-    if (!dev.updatingValues) {
-      updateDirectUserIOs(context, dev);
-    }
-  });
+void startUpdate(BuildContext context, Device dev) async {
+  update = true;
+  exit = false;
+  updateDirectUserIOs(context, dev);
 }
 
 Future<bool> stopUpdate(Device dev) async {
   const int delayDuration = 5;
-  timer.cancel();
+  update = false;
   int elapsed = 0;
-  while (dev.updatingValues) {
+  while (!exit) {
     await Future.delayed(const Duration(milliseconds: delayDuration));
     // wait for the update to finish
     elapsed += delayDuration;
@@ -298,7 +368,8 @@ Future<bool> waitBusy(Device dev) async {
     await Future.delayed(const Duration(milliseconds: delayDuration));
     elapsed += delayDuration;
     if (elapsed > timeout) {
-      return false;
+      dev.espsocket.setBusy(false);
+      return true;
     }
   }
 
@@ -310,13 +381,10 @@ List<Widget> userIOs = List.empty(growable: true);
 
 class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   void _generateIOsListener() {
-    if (exit) return;
-    if (generateIOs.value) {
-      updateIOs.value = false;
-      userIOs = _generateDirectUserIOs(widget.device);
-      updateIOs.value = true;
-      generateIOs.value = false;
-    }
+    if (!update) return;
+    updateIOs.value = false;
+    userIOs = _generateDirectUserIOs(widget.device);
+    updateIOs.value = true;
   }
 
   @override
@@ -324,8 +392,6 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     super.initState();
     userIOs = List.empty(growable: true);
     userIOs.add(loadingTileNoText);
-    exit = false;
-    update = true;
     generateIOs = ValueNotifier(false);
     generateIOs.addListener(_generateIOsListener);
 
@@ -340,14 +406,13 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    exit = true;
     Future.microtask(() async {
-      timer.cancel();
-      while (widget.device.updatingValues) {
-        await Future.delayed(const Duration(milliseconds: 10));
-      }
+      await stopUpdate(widget.device);
       generateIOs.removeListener(_generateIOsListener);
       generateIOs.dispose();
+      //widget.device.espsocket.flush();
+      //widget.device.espsocket.socket.flush();
+      //widget.device.espsocket.socket.destroy();
       widget.device.espsocket.close();
     });
 
@@ -361,11 +426,10 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     state == AppLifecycleState.inactive || state == AppLifecycleState.hidden) {
       // app in background
       Future.microtask(() async {
-        while (widget.device.updatingValues) {
-          await Future.delayed(const Duration(milliseconds: 10));
-        }
-        timer.cancel();
+        await stopUpdate(widget.device);
         widget.device.espsocket.close();
+        //widget.device.espsocket.socket.flush();
+        //widget.device.espsocket.socket.destroy();
       });
     } else if (state == AppLifecycleState.resumed) {
       // app in foreground
@@ -375,28 +439,26 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
 
 
 
-  // DATA SEPARATOR
+  // DATA SEPARATOR WILL BE FOUND IN settings.dart
   // for example: switch1<DATA SEPARATOR>Valvola1,sensor<DATA SEPARATOR>Stato<DATA SEPARATOR>aperta,sensor<DATA SEPARATOR>Litri/s<DATA SEPARATOR>5.24;
-
-  final String _dataSeparator = "\$";
 
   Card _addSwitchFeature(String feature)
   {
     // switch1$Valvola1,status$1,sensor$Stato$aperta,sensor$Litri/s$5.24;
     feature.replaceAll(";", "");
-    String switchId = feature.split(_dataSeparator)[0][feature.split(_dataSeparator)[0].length - 1];
-    String switchname = feature.split(_dataSeparator)[1].split(",")[0];
+    String switchId = feature.split(dataSeparator)[0][feature.split(dataSeparator)[0].length - 1];
+    String switchname = feature.split(dataSeparator)[1].split(",")[0];
     String text = "$switchId: $switchname";
     Color color = Theme.of(context).colorScheme.inversePrimary;
 
     for (String addon in feature.split(","))
     {
       if (addon.contains("sensor")) {
-        String sensorName = addon.split(_dataSeparator)[1];
-        String sensorData = addon.split(_dataSeparator)[2];
+        String sensorName = addon.split(dataSeparator)[1];
+        String sensorData = addon.split(dataSeparator)[2];
         text += " - $sensorName: $sensorData";
       } else if (addon.contains("status")) {
-        String status = addon.split(_dataSeparator)[1];
+        String status = addon.split(dataSeparator)[1];
         if (status == "0") {
           color = Color.alphaBlend(Theme.of(context).colorScheme.surfaceContainerLow.withAlpha(50), const Color.fromARGB(255, 231, 67, 67));
         } else if (status == "1") {
@@ -442,11 +504,10 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
 
                       String statusCode = await widget.device.openCloseValve(switchId);
                       if (statusCode != "200 OK") {
-                        showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                        showPopupOK(context, "Riprova", "Impossibile inviare il comando:\n$statusCode");
                       }
 
-                      startTimer(context, widget.device);
-                      //update = true;
+                      startUpdate(context, widget.device);
                     },
                 ),
               ),
@@ -461,9 +522,9 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   {
     // timestamp1:TimestampName:timestamp;
     feature.replaceAll(";", "");
-    //String timestampId = feature.split(_dataSeparator)[0][feature.split(_dataSeparator)[0].length - 1];
-    String timestampName = feature.split(_dataSeparator)[1];
-    String timestamp = feature.split(_dataSeparator)[2];
+    //String timestampId = feature.split(dataSeparator)[0][feature.split(dataSeparator)[0].length - 1];
+    String timestampName = feature.split(dataSeparator)[1];
+    String timestamp = feature.split(dataSeparator)[2];
     String text = "$timestampName: $timestamp";
 
     return Card(
@@ -487,9 +548,9 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   {
     // sensor1:SensorName:SensorData;
     feature.replaceAll(";", "");
-    //String sensorId = feature.split(_dataSeparator)[0][feature.split(_dataSeparator)[0].length - 1];
-    String sensorName = feature.split(_dataSeparator)[1];
-    String sensorData = feature.split(_dataSeparator)[2];
+    //String sensorId = feature.split(dataSeparator)[0][feature.split(dataSeparator)[0].length - 1];
+    String sensorName = feature.split(dataSeparator)[1];
+    String sensorData = feature.split(dataSeparator)[2];
     String text = "";
     //text += "$sensorId: ";
     text += "$sensorName: $sensorData";
@@ -515,11 +576,11 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   {
     // button1&giao&dataToSend;
     feature.replaceAll(";", "");
-    //String buttonId = feature.split(_dataSeparator)[0][feature.split(_dataSeparator)[0].length - 1];
-    String buttonText = feature.split(_dataSeparator)[1];
+    //String buttonId = feature.split(dataSeparator)[0][feature.split(dataSeparator)[0].length - 1];
+    String buttonText = feature.split(dataSeparator)[1];
     String dataToSend = "";
-    if (feature.split(_dataSeparator).length == 3) {
-      dataToSend = feature.split(_dataSeparator)[2];
+    if (feature.split(dataSeparator).length == 3) {
+      dataToSend = feature.split(dataSeparator)[2];
     }
 
     return Card(
@@ -533,8 +594,8 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
               padding: const EdgeInsets.only(left: 8.0),
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.alphaBlend(Colors.white.withAlpha(150), Theme.of(context).colorScheme.inversePrimary),
-                  foregroundColor: Theme.of(context).colorScheme.primary,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
                 ),
                 child: Text(buttonText),
                 onPressed: () async {
@@ -555,8 +616,10 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
 
                     String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout(dataToSend);
                     if (statusCode != "200 OK") {
-                      showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                      showPopupOK(context, "Riprova", "Impossibile inviare il comando:\n$statusCode");
                     }
+
+                    startUpdate(context, widget.device);
                   }
                 }
               ),
@@ -574,15 +637,15 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     // textinput1$08:00-09:30,button$Imposta$send;
     feature.replaceAll(";", "");
     List<Widget> addons = List.empty(growable: true);
-    int textInputId = int.parse(feature.split(_dataSeparator)[0][feature.split(_dataSeparator)[0].length - 1]);
+    int textInputId = int.parse(feature.split(dataSeparator)[0][feature.split(dataSeparator)[0].length - 1]);
     String textInputHintText = "";
     if (feature.contains(",")) {
-      textInputHintText = feature.split(",")[0].split(_dataSeparator)[1];
+      textInputHintText = feature.split(",")[0].split(dataSeparator)[1];
     } else {
-      textInputHintText = feature.split(_dataSeparator)[1];
+      textInputHintText = feature.split(dataSeparator)[1];
     }
 
-    String dataToSend = feature.split(_dataSeparator)[3];
+    String dataToSend = feature.split(dataSeparator)[3];
     TextEditingController textInputController = TextEditingController();
     if (textInputControllers.length >= textInputId) {
       textInputController = textInputControllers[textInputId - 1];
@@ -594,7 +657,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     {
       if (addon.contains("button"))
       {
-        String buttonText = addon.split(_dataSeparator)[1];
+        String buttonText = addon.split(dataSeparator)[1];
         addons.add(
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -620,10 +683,10 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                 String template = dataToSend.split("send")[1];
                 String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout("$template${textInputController.text}");
                 if (statusCode.split("\n")[0] != "200 OK") {
-                  showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                  showPopupOK(context, "Riprova", "Impossibile inviare il comando:\n$statusCode");
                 }
                 textInputController.clear();
-                startTimer(context, widget.device);
+                startUpdate(context, widget.device);
               } else {
                 if (dataToSend == "") {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -632,9 +695,9 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                 } else {
                   String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout(dataToSend);
                   if (statusCode.split("\n")[0] != "200 OK") {
-                    showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                    showPopupOK(context, "Riprova", "Impossibile inviare il comando:\n$statusCode");
                   }
-                  startTimer(context, widget.device);
+                  startUpdate(context, widget.device);
                 }
               }
             }
@@ -680,19 +743,19 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     // "timepicker1$22:00-23:00,button$Imposta$sendPOST ?valve=1&schedule=;"
     feature.replaceAll(";", "");
     List<Widget> addons = List.empty(growable: true);
-    int timePickerId = int.parse(feature.split(_dataSeparator)[0][feature.split(_dataSeparator)[0].length - 1]);
-    String dataToSend = feature.split(_dataSeparator)[3];
+    int timePickerId = int.parse(feature.split(dataSeparator)[0][feature.split(dataSeparator)[0].length - 1]);
+    String dataToSend = feature.split(dataSeparator)[3];
     List<String> receivedTime = List<String>.filled(2, "00:00");
     TimeOfDay startTime;
     TimeOfDay endTime;
     String timePickerReceivedData;
     if (feature.contains(",")) {
-      timePickerReceivedData = feature.split(",")[0].split(_dataSeparator)[1];
+      timePickerReceivedData = feature.split(",")[0].split(dataSeparator)[1];
       if (timePickerReceivedData != "") {
         receivedTime = timePickerReceivedData.split("-");
       }
     } else {
-      timePickerReceivedData = feature.split(_dataSeparator)[1];
+      timePickerReceivedData = feature.split(dataSeparator)[1];
       if (timePickerReceivedData != "") {
         receivedTime = timePickerReceivedData.split("-");
       }
@@ -722,7 +785,7 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
     {
       if (addon.contains("button"))
       {
-        String buttonText = addon.split(_dataSeparator)[1];
+        String buttonText = addon.split(dataSeparator)[1];
         addons.add(
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -751,9 +814,9 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                 String timeToSend = "${padLeft("${startTime.hour}", 2, "0")}:${padLeft("${startTime.minute}", 2, "0")}-${padLeft("${endTime.hour}", 2, "0")}:${padLeft("${endTime.minute}", 2, "0")}";
                 String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout("$template$timeToSend");
                 if (statusCode.split("\n")[0] != "200 OK") {
-                  showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                  showPopupOK(context, "Riprova", "Impossibile inviare il comando:\n$statusCode");
                 }
-                update = true;
+                startUpdate(context, widget.device);
               } else {
                 if (dataToSend == "") {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -762,9 +825,9 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
                 } else {
                   String statusCode = await widget.device.espsocket.sendAndWaitForAnswerTimeout(dataToSend);
                   if (statusCode.split("\n")[0] != "200 OK") {
-                    showPopupOK(context, "Errore", "Impossibile inviare il comando:\n$statusCode");
+                    showPopupOK(context, "Riprova", "Impossibile inviare il comando:\n$statusCode");
                   }
-                  update = true;
+                  startUpdate(context, widget.device);
                 }
               }
             }
@@ -892,52 +955,42 @@ class _DevicePageState extends State<DevicePage> with WidgetsBindingObserver {
   }
 }
 
+DateTime lastUpdateTime = DateTime.now().subtract(const Duration(seconds: 10));
+
 void updateDirectUserIOs(BuildContext context, Device dev) async {
   if (exit) return;
-  if (update) {
-    bool result = false;
-    bool notBusy = await waitBusy(dev);
-    if (notBusy) {
-      dev.updatingValues = true;
-      result = await dev.getFeatures();
-    }
-    if (!result)
-    {
-      dev.timeoutCount++;
-      // reconnect
 
-      if (dev.timeoutCount > maxTimeouts) {
-        dev.timeoutCount = 0;
-        timer.cancel();
+  final start = DateTime.now();
 
-        dev.espsocket.socket.destroy();
-
-        connect(context, dev, false).then((connected) {
-          showPopupOK(
-            context,
-            "Riprova",
-            "Non è stato possibile connettersi a ${dev.ip}. Prova a tornare al menù e aprire di nuovo il dispositivo."
-          );
-
-          ListTile cannotConnect = ListTile(
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text("Impossibile connettersi a ${dev.ip}", style: const TextStyle(fontSize: 16, color: Colors.grey)),
-                ],
-              ),
-          );
-
-          userIOs = List.empty(growable: true);
-          userIOs.add(cannotConnect);
-          updateIOs.value = false;
-          updateIOs.value = true;
-        });
-      }
-    } else {
-      dev.timeoutCount = 0;
-      generateIOs.value = true;
-      dev.updatingValues = false;
-    }
+  final updateTimeDiff = DateTime.now().difference(lastUpdateTime).inMilliseconds;
+  if (updateTimeDiff < updateTime) {
+    exit = true;
+    return;
+    // if the time it took to update is less than the required update time, it means there is another
+    // thread executing this function, so stop this one
   }
+  lastUpdateTime = DateTime.now();
+
+  bool notBusy = await waitBusy(dev);
+  if (notBusy) {
+    dev.updatingValues = true;
+    //await Future.delayed(const Duration(milliseconds: 5));
+    await dev.getAndShowNotification(context, forceShowNotification);
+    forceShowNotification = false;
+    await dev.getFeatures();
+    generateIOs.value = !generateIOs.value;
+  }
+
+  final elapsed = DateTime.now().difference(start).inMilliseconds;
+  if (elapsed < updateTime) {
+    await Future.delayed(Duration(milliseconds: updateTime - elapsed));
+  }
+
+  if (!update) {
+    exit = true;
+    return;
+  }
+  dev.updatingValues = false;
+
+  updateDirectUserIOs(context, dev);
 }
