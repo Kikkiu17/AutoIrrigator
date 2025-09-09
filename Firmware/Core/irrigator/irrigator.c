@@ -42,7 +42,7 @@ uint8_t SCHEDULE_SetSchedule(Valve_t* valve, char* new_schedule)
 	if (schedule->hour_open == -1 || schedule->minute_open == -1 || schedule->hour_close == -1 || schedule->minute_close == -1)
 		return 0;
 
-	memcpy(schedule->text, new_schedule, 11);
+	memcpy(schedule->text, new_schedule, SCHEDULE_TIME_SIZE);
 	return 1;
 }
 
@@ -55,7 +55,7 @@ void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb)
 		Schedule_t* schedule = valve_list[i].schedule;
 		char* new_schedule = savedata.schedules + SCHEDULE_TIME_SIZE * i;
 		if (new_schedule[0] == 0xFF)
-			memset(savedata.schedules + SCHEDULE_TIME_SIZE * i, 0, SCHEDULE_TIME_SIZE);
+			memcpy(new_schedule, DEFAULT_SCHEDULE, SCHEDULE_TIME_SIZE);
 		// hh:mm-hh:mm
 		schedule->hour_open = bufferToInt(new_schedule, 2);
 		schedule->minute_open = bufferToInt(new_schedule + 3, 2);

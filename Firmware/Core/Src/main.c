@@ -125,33 +125,10 @@ int main(void)
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   // ESPRST is HIGH by default (set up in .ioc file) so ESP is enabled by default
-  ESP8266_Init();
-
-  if (ESP8266_CheckAT() != OK)
+  if (ESP8266_Init() == TIMEOUT)
   {
-	  // reset ESP
-	  Response_t start_ok = ERR;
-	  while (start_ok != OK)
-	  {
-		  if (ESP8266_ATReset() != OK)
-		  {
-			  // hardware reset
-			  HAL_GPIO_WritePin(ESPRST_GPIO_Port, ESPRST_Pin, 0);
-			  HAL_Delay(1);
-			  HAL_GPIO_WritePin(ESPRST_GPIO_Port, ESPRST_Pin, 1);
-		  }
-		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-		  start_ok = ESP8266_WaitForStringCNDTROffset("ready", -10, 5000);
-		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-		  __HAL_UART_CLEAR_OREFLAG(&huart1);	// clear overrun flag caused by esp reset
-		  ESP8266_ClearBuffer();
-	  }
-
-	  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-	  // wait for WiFi, otherwise it will timeout and connect to the WiFi
-	  if (ESP8266_WaitForStringCNDTROffset("WIFI CONNECTED", -20, 6000) == OK)
-		  ESP8266_WaitForStringCNDTROffset("WIFI GOT IP", -15, 18000);
-	  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
+	  while (1)
+		  __asm__("nop");
   }
 
 
@@ -164,17 +141,7 @@ int main(void)
   WIFI_EnableNTPServer(&wifi, 2);
 
   HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-  Response_t atstatus = ESP8266_CheckAT();
-  /**
-   * if some of the following commands return something other than OK, it could mean that
-   * the server is already set up, so we can continue the boot
-   */
-  if (atstatus == OK)
-	  atstatus = WIFI_SetCWMODE("1");
-  if (atstatus == OK)
-	  atstatus = WIFI_SetCIPMUX("1");
-  if (atstatus == OK)
-	  atstatus = WIFI_SetCIPSERVER(SERVER_PORT);
+  WIFI_StartServer(&wifi, SERVER_PORT);
   HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 
   HAL_TIM_IC_Start_IT(&htim14, TIM_CHANNEL_1);
@@ -202,10 +169,9 @@ int main(void)
   {
 	  BATTERY_GetVoltage();
 
-	  atstatus = WAITING;
 	  // HANDLE WIFI CONNECTION
-	  atstatus = WIFI_ReceiveRequest(&wifi, &conn, AT_SHORT_TIMEOUT);
-	  if (atstatus == OK)
+	  Response_t status = WIFI_ReceiveRequest(&wifi, &conn, AT_SHORT_TIMEOUT);
+	  if (status == OK)
 	  {
 		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 		  char* key_ptr = NULL;
@@ -242,16 +208,16 @@ int main(void)
 		  }
 		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 	  }
-	  else if (atstatus != TIMEOUT)
+	  else if (status != TIMEOUT)
 	  {
-		  sprintf(wifi.buf, "Status: %d", atstatus);
+		  sprintf(wifi.buf, "Status: %d", status);
 		  WIFI_ResetComm(&wifi, &conn);
 		  WIFI_SendResponse(&conn, "500 Internal server error", wifi.buf, strlen(wifi.buf));
 	  }
 
 	  if (!WIFI_response_sent)
 	  {
-		  if (atstatus == WAITING || atstatus == ERR || atstatus == NULVAL)
+		  if (status == ERR || status == NULVAL)
 			  WIFI_ResetComm(&wifi, &conn);
 	  }
 	  else

@@ -57,7 +57,7 @@ typedef struct
 
 int32_t bufferToInt(char* buf, uint32_t size);
 
-void ESP8266_Init(void);
+Response_t ESP8266_Init(void);
 void ESP8266_ClearBuffer(void);
 char* ESP8266_GetBuffer(void);
 void ESP8266_HardwareReset(void);
@@ -75,8 +75,8 @@ HAL_StatusTypeDef ESP8266_SendATCommandKeepStringNoResponse(char* cmd, size_t si
 
 Response_t WIFI_Connect(WIFI_t* wifi);
 Response_t WIFI_GetConnectionInfo(WIFI_t* wifi);
-Response_t WIFI_SetCWMODE(char* mode);
-Response_t WIFI_SetCIPMUX(char* mux);
+Response_t WIFI_SetCWMODE(uint8_t mode);
+Response_t WIFI_SetCIPMUX(uint8_t mux);
 Response_t WIFI_SetCIPSERVER(uint16_t server_port);
 Response_t WIFI_SetHostname(WIFI_t* wifi, char* hostname);
 Response_t WIFI_GetHostname(WIFI_t* wifi);
@@ -96,5 +96,7 @@ void WIFI_ResetComm(WIFI_t* wifi, Connection_t* conn);
 char* WIFI_RequestHasKey(Connection_t* conn, char* desired_key);
 char* WIFI_RequestKeyHasValue(Connection_t* conn, char* request_key_ptr, char* value);
 char* WIFI_GetKeyValue(Connection_t* conn, char* request_key_ptr, uint32_t* value_size);
+Response_t WIFI_StartServer(WIFI_t* wifi, uint16_t port);
+Response_t ESP8266_ResetWaitReady();
 
 #endif /* ESP8266_ESP8266_H_ */

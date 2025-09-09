@@ -12,6 +12,15 @@ typedef uint8_t bool;
 #define true 1
 #define false 0
 
+// CHANGE THESE SETTINGS ACCORDING TO YOUR SETUP!!!
+#define STM_UART huart1
+#define UART_DMA_CHANNEL DMA1_Channel1
+#define ESP_RST_PORT ESPRST_GPIO_Port
+#define ESP_RST_PIN ESPRST_Pin
+
+#define STATUS_Port STATUS_GPIO_Port
+//#define STATUS_Pin STATUS_Pin
+
 // ==========================================================================================
 // 											FLASH
 // ==========================================================================================
@@ -66,6 +75,7 @@ extern Notification_t notification;
 #define VALVES_NUM 4
 #define MIN_WATER_FLOW 30			// liters per hour
 #define SCHEDULE_TIME_SIZE 11		// hh:mm-hh:mm
+#define DEFAULT_SCHEDULE "00:00-00:00"
 
 // ==========================================================================================
 // 									IRRIGATION STRUCTS
@@ -185,6 +195,7 @@ extern SaveData_t savedata;
 // all times are in milliseconds
 #define STROBE_DELAY 4000
 #define STROBE_DURATION 12
+#define START_ATTEMPTS 4
 
 // ==========================================================================================
 // 										COMM TEMPLATE
@@ -234,15 +245,10 @@ static const char FEATURES_TEMPLATE[] =
 		"switch2$Sud,status$%d,sensor$Litri/h$%d;"
 		"switch3$Sud-Est,status$%d,sensor$Litri/h$%d;"
 		"switch4$Est,status$%d;"
-		//"textinput1$%s,button$Imposta$textInputPOST ?valve=1&schedule=;"
-		//"textinput2$%s,button$Imposta$textInputPOST ?valve=2&schedule=;"
-		//"textinput3$%s,button$Imposta$textInputPOST ?valve=3&schedule=;"
-		//"textinput4$%s,button$Imposta$textInputPOST ?valve=4&schedule=;"
 		"timepicker1$%s,button$Imposta$sendPOST ?valve=1&schedule=;"
 		"timepicker2$%s,button$Imposta$sendPOST ?valve=2&schedule=;"
 		"timepicker3$%s,button$Imposta$sendPOST ?valve=3&schedule=;"
 		"timepicker4$%s,button$Imposta$sendPOST ?valve=4&schedule=;"
-		//"textinput1$NOME 1,button$Imposta$sendPOST ?valve=1&cmd=;"
 		"timestamp1$Tempo CPU$%d ms;"
 };
 
