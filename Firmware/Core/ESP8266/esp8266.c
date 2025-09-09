@@ -314,16 +314,19 @@ Response_t WIFI_SetHostname(WIFI_t* wifi, char* hostname)
 {
 	if (wifi == NULL || hostname == NULL) return NULVAL;
 	uint32_t hostname_size = strlen(hostname);
-	char hostnamestr[18 + hostname_size];
-	sprintf(hostnamestr, "AT+CWHOSTNAME=\"%s\"\r\n", hostname);
+
+	char hostnamestr[18 + HOSTNAME_MAX_SIZE];
+	if (hostname_size <= HOSTNAME_MAX_SIZE)
+		snprintf(hostnamestr, hostname_size, "AT+CWHOSTNAME=\"%s\"\r\n", hostname);
+	else
+	{
+		snprintf(hostnamestr, HOSTNAME_MAX_SIZE, "AT+CWHOSTNAME=\"%s\"\r\n", hostname);
+		hostname_size = HOSTNAME_MAX_SIZE;
+	}
+
 	Response_t atstatus = ESP8266_SendATCommandResponse(hostnamestr, 18 + hostname_size, AT_SHORT_TIMEOUT);
 	if (atstatus == OK)
-	{
-		if (hostname_size <= HOSTNAME_MAX_SIZE)
-			memcpy(wifi->hostname, hostname, hostname_size);
-		else
-			memcpy(wifi->hostname, hostname, HOSTNAME_MAX_SIZE);
-	}
+		memcpy(wifi->hostname, hostname, hostname_size);
 	return atstatus;
 }
 
@@ -400,22 +403,28 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 	char* ptr = NULL;
 	char* ipd_ptr = NULL;
 
-	if (uart_buffer[0] == '\0')
+	uint32_t start_time = uwTick;
+	while (1)
 	{
-		/**
-		 * the buffer could have been cleared after the first DMA read. if this happens,
-		 * the first item of the DMA buffer will be 0x00. if this is so, check for an incoming
-		 * connection from the second element
-		 */
-		if ((ipd_ptr = strstr(uart_buffer + 1, "+IPD,")) == NULL) return TIMEOUT;
-	}
-	else
-	{
-		/**
-		 * if the first element of the buffer is not 0x00, check for an incoming connection
-		 * from the start
-		 */
-		if ((ipd_ptr = strstr(uart_buffer, "+IPD,")) == NULL) return TIMEOUT;
+		if (uwTick - start_time > timeout) return TIMEOUT;
+
+		if (uart_buffer[0] == '\0')
+		{
+			/**
+			 * the buffer could have been cleared after the first DMA read. if this happens,
+			 * the first item of the DMA buffer will be 0x00. if this is so, check for an incoming
+			 * connection from the second element
+			 */
+			if ((ipd_ptr = strstr(uart_buffer + 1, "+IPD,")) != NULL) break;
+		}
+		else
+		{
+			/**
+			 * if the first element of the buffer is not 0x00, check for an incoming connection
+			 * from the start
+			 */
+			if ((ipd_ptr = strstr(uart_buffer, "+IPD,")) != NULL) break;
+		}
 	}
 
 	/**
@@ -423,7 +432,12 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 	 * 		   v
 	 * +IPD,n,m:xxxxxxxxxx
 	 */
-	while ((ptr = strstr(ipd_ptr, ":")) == NULL) {}
+	start_time = uwTick;
+	while ((ptr = strstr(ipd_ptr, ":")) == NULL)
+	{
+		if (uwTick - start_time > timeout) return TIMEOUT;
+		__asm__("nop");
+	}
 
 	uint32_t expected_size = 0;
 	//		  v-->v
@@ -432,14 +446,14 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 	uint8_t num_size = expected_size_end_p - (ipd_ptr + 7);
 	expected_size = bufferToInt(ipd_ptr + 7, num_size);
 
-	uint32_t start_time = uwTick;
+	start_time = uwTick;
 	uint32_t string_len = 0;
-	while (string_len != expected_size)
+	while (string_len < expected_size)
 	{
 		// wait until the expected number of bytes m is received
 		if (uwTick - start_time > timeout) return TIMEOUT;
 		string_len = strlen(ptr + 1);
-		if (string_len > expected_size || ptr + 1 - uart_buffer + string_len >= UART_BUFFER_SIZE - 1)
+		if (/*string_len > expected_size || */ptr + 1 - uart_buffer + string_len >= UART_BUFFER_SIZE - 1)
 		{
 			/**
 			 * if more bytes are received than the expected or the buffer is full,
@@ -516,7 +530,6 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, uint32_t body_length)
 {
 	if (conn == NULL || status_code == NULL || body == NULL) return NULVAL;
-	Response_t atstatus = ERR;
 
 	// calculate width in characters of the body length and connection number
 	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
@@ -525,7 +538,7 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
 	uint32_t status_code_width = strlen(status_code);
 
 	// get length of the entire TCP packet
-	uint32_t total_response_length = 1 + status_code_width + body_length;
+	uint32_t total_response_length = 1 + status_code_width + body_length + 2;	// the last 2 are \r\n as delimiter for the response
 	if (total_response_length > RESPONSE_MAX_SIZE) return ERR;
 
 	// get width in characters of the response length
@@ -547,7 +560,7 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
 	}
 
 	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
-	sprintf(conn->response_buffer, "%s\n%s", status_code, body);
+	sprintf(conn->response_buffer, "%s\n%s\r\n", status_code, body);
 	HAL_UART_Transmit(&STM_UART, (uint8_t*)conn->response_buffer, total_response_length, UART_TX_TIMEOUT);
 
 	if (ESP8266_WaitForString("Recv", AT_SHORT_TIMEOUT) == TIMEOUT)
@@ -558,7 +571,7 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
 
 	WIFI_response_sent = true;
 
-	return atstatus;
+	return OK;
 }
 
 Response_t WIFI_GetTime(WIFI_t* wifi)

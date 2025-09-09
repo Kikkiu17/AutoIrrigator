@@ -44,7 +44,7 @@ static const char ESP_NAME[] = "Hub irrigazione";
 #define HOSTNAME_MAX_SIZE 32		// ESPDEVICExxx
 #define NAME_MAX_SIZE 32			// human-readable name
 
-#define UART_BUFFER_SIZE 2048
+#define UART_BUFFER_SIZE 1536
 #define UART_TX_TIMEOUT 500	// ms
 #define UART_RX_IDLE_TIMEOUT 3000	// ms
 #define STM_UART huart1

@@ -79,9 +79,8 @@ int8_t yesterday_last_precipitation_hour;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void BATTERY_GetVoltage();
 /* USER CODE BEGIN PFP */
-
+void BATTERY_GetVoltage(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -173,9 +172,9 @@ int main(void)
   if (atstatus == OK)
 	  atstatus = WIFI_SetCWMODE("1");
   if (atstatus == OK)
-  	  atstatus = WIFI_SetCIPMUX("1");
+	  atstatus = WIFI_SetCIPMUX("1");
   if (atstatus == OK)
-  	  atstatus = WIFI_SetCIPSERVER(SERVER_PORT);
+	  atstatus = WIFI_SetCIPSERVER(SERVER_PORT);
   HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 
   HAL_TIM_IC_Start_IT(&htim14, TIM_CHANNEL_1);
@@ -252,10 +251,8 @@ int main(void)
 
 	  if (!WIFI_response_sent)
 	  {
-		  if (atstatus == WAITING)
-		  {
+		  if (atstatus == WAITING || atstatus == ERR || atstatus == NULVAL)
 			  WIFI_ResetComm(&wifi, &conn);
-		  }
 	  }
 	  else
 		  WIFI_response_sent = false;
@@ -348,6 +345,7 @@ int main(void)
 		  else if (notification.text == (char*)NOTIFICATION_LOW_BATTERY)
 			  NOTIFICATION_Reset();
 	  }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -401,7 +399,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void BATTERY_GetVoltage()
+void BATTERY_GetVoltage(void)
 {
 	HAL_ADC_Start(&hadc1);
 	HAL_ADC_PollForConversion(&hadc1, 250);

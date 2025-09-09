@@ -54,6 +54,8 @@ void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb)
 	{
 		Schedule_t* schedule = valve_list[i].schedule;
 		char* new_schedule = savedata.schedules + SCHEDULE_TIME_SIZE * i;
+		if (new_schedule[0] == 0xFF)
+			memset(savedata.schedules + SCHEDULE_TIME_SIZE * i, 0, SCHEDULE_TIME_SIZE);
 		// hh:mm-hh:mm
 		schedule->hour_open = bufferToInt(new_schedule, 2);
 		schedule->minute_open = bufferToInt(new_schedule + 3, 2);
