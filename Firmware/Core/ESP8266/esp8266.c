@@ -6,7 +6,6 @@
  */
 
 #include "esp8266.h"
-#include "../Flash/flash.h"
 #include <string.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -199,7 +198,7 @@ Response_t ESP8266_ResetWaitReady(void)
 	Response_t start_ok = ERR;
 	while (start_ok != OK)
 	{
-		if (attempt_number > START_ATTEMPTS)
+		if (START_ATTEMPTS != -1 && attempt_number > START_ATTEMPTS)
 			return TIMEOUT;
 		attempt_number++;
 		// hardware reset
@@ -401,18 +400,16 @@ Response_t WIFI_SetName(WIFI_t* wifi, char* name)
 	if (name[0] == 0) return ERR;
 
 	uint32_t name_size = strlen(name);
-	memset(wifi->name, 0, NAME_MAX_SIZE);
-
 	if (name_size > NAME_MAX_SIZE)
-	{
-		memcpy(savedata.name, name, NAME_MAX_SIZE);
-		memcpy(wifi->name, name, NAME_MAX_SIZE);
-	}
+		name_size = NAME_MAX_SIZE;
 	else
 	{
-		memcpy(savedata.name, name, name_size);
-		memcpy(wifi->name, name, name_size);
+		memset(wifi->name + name_size, 0, NAME_MAX_SIZE - name_size);
+		memset(savedata.name + name_size, 0, NAME_MAX_SIZE - name_size);
 	}
+
+	memcpy(savedata.name, name, name_size);
+	memcpy(wifi->name, name, name_size);
 
 	return OK;
 }
@@ -568,6 +565,7 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, uint32_t body_length)
 {
 	if (conn == NULL || status_code == NULL || body == NULL) return NULVAL;
+	if (body_length > RESPONSE_MAX_SIZE) return ERR;
 	Response_t atstatus = ERR;
 
 	// calculate width in characters of the body length and connection number
@@ -597,6 +595,9 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
 		if (ESP8266_WaitForString("SEND OK", 100) == TIMEOUT) return ERR;
 		if (ESP8266_WaitForString(">", 100) == TIMEOUT) return ERR;
 	}
+
+	if (body_length < RESPONSE_MAX_SIZE)
+		body[body_length] = '\0';
 
 	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
 	sprintf(conn->response_buffer, "%s\n%s\r\n", status_code, body);
@@ -851,7 +852,7 @@ char* WIFI_GetKeyValue(Connection_t* conn, char* request_key_ptr, uint32_t* valu
 		if (value_size != NULL)
 		{
 			if (parameter_end_ptr != NULL)
-				*value_size = parameter_end_ptr - key_end_ptr + 1;
+				*value_size = parameter_end_ptr - (key_end_ptr + 1);
 			else
 			{
 				uint32_t str_len = strlen(request_key_ptr);

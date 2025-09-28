@@ -28,16 +28,21 @@ typedef uint8_t bool;
  *				!!!THE LAST PAGE OF THE FLASH MEMORY HAS TO BE BLANK!!!
  * 						!!!CHECK PROGRAM SIZE BEFORE UPLOADING!!!
  */
+#define ENABLE_SAVE_TO_FLASH
+
+#ifdef ENABLE_SAVE_TO_FLASH
+// check your datasheet for the permitted datatype! STM32G030 can write DWORD on FLASH
 typedef uint64_t FLASH_DATATYPE;
 #define FLASH_DATASIZE sizeof(FLASH_DATATYPE)
-#define LAST_PAGE_ADDRESS 0x8007800
-//#define LAST_PAGE_ADDRESS 0x08000000 + ((FLASH_PAGE_NB - 1) * FLASH_PAGE_SIZE)
-//#define LAST_PAGE_ADDRESS 0x08000000 + FLASH_BANK_SIZE - FLASH_PAGE_SIZE + 1
+#define LAST_PAGE_ADDRESS 0x08000000 + ((FLASH_PAGE_NB - 1) * FLASH_PAGE_SIZE)
+//#define LAST_PAGE_ADDRESS 0x08000000 + FLASH_BANK_SIZE - FLASH_PAGE_SIZE
+//#define LAST_PAGE_ADDRESS 0x8007800	// check your datasheet!!!
+#endif
 
 // ==========================================================================================
 // 									NETWORK (esp8266.h)
 // ==========================================================================================
-static const char ESP_NAME[] = "Hub irrigazione";
+static const char ESP_NAME[] = "Frigo";
 #define SERVER_PORT 34677
 
 // NOT SUPPORTED:
@@ -46,20 +51,53 @@ static const char ESP_NAME[] = "Hub irrigazione";
 
 #define AT_SHORT_TIMEOUT 250
 #define AT_MEDIUM_TIMEOUT 500
+#define AT_LONG_TIMEOUT 1250
 
+// BUFFERS SIZES (in RAM)
+
+/**
+ * RESPONSE_MAX_SIZE
+ *
+ * this buffer will contain the data to be sent FROM THIS device to the connected device
+ * this could correspond to sizeof(FEATURES_TEMPLATE), because it's usually the biggest response
+ * this device will send. set this according to your needs
+ */
 #define RESPONSE_MAX_SIZE 1024
+
+/**
+ * REQUEST_MAX_SIZE
+ *
+ * if you don't expect big requests from the remote device, this buffer can be small (usually 128 bytes or less)
+ */
 #define REQUEST_MAX_SIZE 256
+
+/**
+ * WIFI_BUF_MAX_SIZE
+ *
+ * contains short commands to be sent to the ESP, for example to connect it to WiFi, to get the current IP...
+ * (check esp8266.c)
+ * if you don't use it directly, it can be left at the default value.
+ * NOTE: this can contain the network SSID and PASSWORD, so if those strings are larger than this buffer,
+ * the network name and/or its password will be truncated, resulting in no WiFi connection!
+ */
 #define WIFI_BUF_MAX_SIZE 800
+
+/**
+ * UART_BUFFER_SIZE
+ *
+ * if you have to retrieve large amounts of data (i.e. from an API), set this to the minimum size of the response
+ * otherwise, it can be smaller.
+ * if you don't have these requirements, you can set it to a minimum of
+ * REQUEST_MAX_SIZE + some headroom to avoid receiving only partial messages
+ * if you encounter weird behaviors at runtime, try increasing this buffer size
+ */
+#define UART_BUFFER_SIZE 1536
+
 #define HOSTNAME_MAX_SIZE 32		// ESPDEVICExxx
 #define NAME_MAX_SIZE 32			// human-readable name
 
-#define UART_BUFFER_SIZE 1536
-#define UART_TX_TIMEOUT 500	// ms
+#define UART_TX_TIMEOUT 500			// ms
 #define UART_RX_IDLE_TIMEOUT 3000	// ms
-#define STM_UART huart1
-
-#define ESP_RST_PORT ESPRST_GPIO_Port
-#define ESP_RST_PIN ESPRST_Pin
 
 typedef struct notif
 {
