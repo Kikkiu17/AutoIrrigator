@@ -31,38 +31,34 @@ Response_t WIFIHANDLER_HandleNotificationRequest(Connection_t* conn, char* key_p
 			return WIFI_SendResponse(conn, "200 OK", notification.text, notification.size);
 	}
 
-	return WIFI_SendResponse(conn, "400 Bad Request", "Sono supportate solo richieste NOTIFICATION GET", 47);
+	return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
 }
 
 Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 {
-	if (WIFI_RequestKeyHasValue(conn, command_ptr, "help"))
-		return WIFI_SendResponse(conn, "200 OK", (char*)WIFI_HELP_MESSAGE, sizeof(WIFI_HELP_MESSAGE));
-
 	if (conn->request_type == POST)
 	{
 		if (WIFI_RequestKeyHasValue(conn, command_ptr, "changename"))
 		{
 			char* name_ptr = WIFI_RequestHasKey(conn, "name");
 			if (name_ptr == NULL)
-				return WIFI_SendResponse(conn, "400 Bad Request", "Chiave \"name\" non trovata", 25);
+				return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
 			else
 			{
 				uint32_t name_size = 0;
 				name_ptr = WIFI_GetKeyValue(conn, name_ptr, &name_size);
 				if (name_ptr == NULL)
-					return WIFI_SendResponse(conn, "400 Bad Request", "Nome non trovato", 16);
+					return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
 				else
 				{
 					WIFI_SetName(conn->wifi, name_ptr);
 					FLASH_WriteSaveData();	// save name
-					return WIFI_SendResponse(conn, "200 OK", "Nome cambiato", 13);
+					return WIFI_SendResponse(conn, "200 OK", "", 0);
 				}
 			}
 
 		}
-		else return WIFI_SendResponse(conn, "400 Bad Request", "Comando POST WiFi non riconosciuto. "
-			"Scrivi wifi=help per una lista di comandi", 77);
+		else return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
 	}
 	else if (conn->request_type == GET)
 	{
@@ -87,8 +83,7 @@ Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 			// this is possible if RESPONSE_MAX_SIZE is at least as big as WIFI_BUF_MAX_SIZE
 			if (RESPONSE_MAX_SIZE < WIFI_BUF_MAX_SIZE)
 			{
-				return WIFI_SendResponse(conn, "500 Internal server error", "RESPONSE_MAX_SIZE is "
-						"smaller than WIFI_BUF_MAX_SIZE", 51);
+				return WIFI_SendResponse(conn, "500 Internal server error", "", 0);
 			}
 			else
 				return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, sizeof(conn->wifi->buf));
@@ -99,20 +94,10 @@ Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 					"\nrequest: %s", conn->connection_number, conn->request_size, conn->request);
 			return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, strlen(conn->wifi->buf));
 		}
-		else return WIFI_SendResponse(conn, "400 Bad Request", "Comando GET WiFi non riconosciuto. "
-				"Scrivi wifi=help per una lista di comandi", 76);
+		else return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
 	}
 
 	return ERR;
-}
-
-Response_t WIFIHANDLER_HandleHelpRequest(Connection_t* conn)
-{
-	if (conn->request_type == GET)
-		return WIFI_SendResponse(conn, "200 OK", (char*)GET_HELP_MESSAGE, sizeof(GET_HELP_MESSAGE));
-	else if (conn->request_type == POST)
-		return WIFI_SendResponse(conn, "200 OK", (char*)POST_HELP_MESSAGE, sizeof(POST_HELP_MESSAGE));
-	else return WIFI_SendResponse(conn, "400 Bad Request", "Sono supportate solo richieste POST e GET", 41);
 }
 
 Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* features_template)
@@ -137,22 +122,18 @@ Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, c
 {
 	char* wbuf = conn->wifi->buf;
 
-	if (WIFI_RequestKeyHasValue(conn, key_ptr, "help"))
-		return WIFI_SendResponse(conn, "200 OK", (char*)WEATHER_HELP_MESSAGE, sizeof(WEATHER_HELP_MESSAGE));
-
 	if (!wx->last_update_status)
 	{
 		wx->last_update_status = WEATHER_GetForecast(wx, ESP8266_GetBuffer());
 		if (!wx->last_update_status)
-			return WIFI_SendResponse(conn, "500 Internal Server Error", "Impossibile ottenere le previsioni", 34);
+			return WIFI_SendResponse(conn, "500 Internal Server Error", "", 0);
 	}
 
 	if (WIFI_RequestKeyHasValue(conn, key_ptr, "lowprob"))
 	{
 		int8_t hour = WEATHER_GetLowProbPrecipitation(wx, 0);
 		if (hour == -1)
-			return WIFI_SendResponse(conn, "200 OK", "Oggi la probabilita' di pioggia"
-					" e' minore del 30% in tutte le ore", 65);
+			return WIFI_SendResponse(conn, "200 OK", "", 0);
 		else
 		{
 			memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
@@ -165,8 +146,7 @@ Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, c
 	{
 		int8_t hour = WEATHER_GetProbablePrecipitation(wx, 0);
 		if (hour == -1)
-			return WIFI_SendResponse(conn, "200 OK", "Oggi la probabilita' di pioggia"
-					" e' minore del 40% in tutte le ore", 65);
+			return WIFI_SendResponse(conn, "200 OK", "", 0);
 		else
 		{
 			memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
@@ -225,7 +205,7 @@ Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, c
 		return WIFI_SendResponse(conn, "200 OK", wx->forecast_time, sizeof(wx->forecast_time));
 	}
 
-	return WIFI_SendResponse(conn, "400 Bad Request", "Tipo di richiesta non trovato", 29);
+	return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
 
 	return ERR;
 }

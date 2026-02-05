@@ -42,11 +42,11 @@ typedef uint64_t FLASH_DATATYPE;
 // ==========================================================================================
 // 									NETWORK (esp8266.h)
 // ==========================================================================================
-static const char ESP_NAME[] = "Frigo";
+static const char ESP_NAME[] = "Hub irrigazione";
 #define SERVER_PORT 34677
 
 // NOT SUPPORTED:
-//static const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
+static const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
 //static const char ESP_IP[] = "192.168.1.38";
 
 #define AT_SHORT_TIMEOUT 250
@@ -133,14 +133,13 @@ typedef struct schedule
 	int8_t 				minute_open;
 	int8_t 				hour_close;
 	int8_t 				minute_close;
-	char				text[SCHEDULE_TIME_SIZE];
+	char				text[SCHEDULE_TIME_SIZE+1];
 } Schedule_t;
 
 typedef struct valve
 {
 	uint8_t 			id;
 	uint8_t 			isOpen;
-	char 				status[6];
 	GPIO_TypeDef* 		gpio_port;
 	uint16_t 			gpio_pin;
 	struct flow* 		flow;
@@ -154,54 +153,6 @@ typedef struct valve
 #define PROBABLE_PRECIPITATION 40			// %, PROB40
 #define LOW_PROB_PRECIPITATION 30			// %, PROB30
 #define PRECIPITATION_THRESHOLD	1			// millimeters
-
-// ==========================================================================================
-// 										HELP MESSAGES
-// ==========================================================================================
-static const char GET_HELP_MESSAGE[] =
-{
-		"Comandi GET:"
-		"\n- valve"
-		"\n- wifi"
-		"\n- features"
-		"\n- weather"
-		"\n- help"
-		"\n\nper ottenere aiuto per ogni comando, fai <comando>=help"
-};
-
-static const char POST_HELP_MESSAGE[] =
-{
-		"Comandi POST:"
-		"\n- at"
-		"\n\nper ottenere aiuto per ogni comando, fai <comando>=help"
-};
-
-static const char WIFI_HELP_MESSAGE[] =
-{
-		"Comandi GET WiFi:"
-		"\n- SSID"
-		"\n- IP"
-		"\n- ID (ESPDEVICExxx)"
-		"\n- name"
-		"\n- buf"
-		"\n- conn (dettagli connesione)"
-		"\n- help"
-		"\n\nComandi POST WiFi:"
-		"\n- changename"
-		"\n- help"
-};
-
-static const char WEATHER_HELP_MESSAGE[] =
-{
-		"Comandi GET weather:"
-		"\n- lowprob (prima ora in cui ci sara' probabilita' di pioggia maggiore del 30%)"
-		"\n- prob (prima ora in cui ci sara' probabilita' di pioggia maggiore del 40%)"
-		"\n- now (precipitazioni attuali)"
-		"\n- precipitation (precipitazioni per ogni ora del giorno)"
-		"\n- hourprob (prob di precipitazioni per ogni ora del giorno)"
-		"\n- updatetime"
-		"\n- help"
-};
 
 // ==========================================================================================
 // 										SAVE DATA
@@ -221,7 +172,8 @@ static const char WEATHER_HELP_MESSAGE[] =
 typedef struct sdata
 {
 	char schedules[SCHEDULE_TIME_SIZE * VALVES_NUM];
-	char name[NAME_MAX_SIZE];
+	char name[NAME_MAX_SIZE + 1];
+	char ip[15 + 1];
 } SaveData_t;
 
 extern SaveData_t savedata;
@@ -230,9 +182,6 @@ extern SaveData_t savedata;
 // 											OTHER
 // ==========================================================================================
 
-// all times are in milliseconds
-#define STROBE_DELAY 4000
-#define STROBE_DURATION 12
 #define START_ATTEMPTS 4
 
 // ==========================================================================================
@@ -283,10 +232,10 @@ static const char FEATURES_TEMPLATE[] =
 		"switch2$Sud,status$%d,sensor$Litri/h$%d;"
 		"switch3$Sud-Est,status$%d,sensor$Litri/h$%d;"
 		"switch4$Est,status$%d;"
-		"timepicker1$%s,button$Imposta$sendPOST ?valve=1&schedule=;"
-		"timepicker2$%s,button$Imposta$sendPOST ?valve=2&schedule=;"
-		"timepicker3$%s,button$Imposta$sendPOST ?valve=3&schedule=;"
-		"timepicker4$%s,button$Imposta$sendPOST ?valve=4&schedule=;"
+		"timepicker1$%s,button$Imposta$sendPOST ?switch=1&schedule=;"
+		"timepicker2$%s,button$Imposta$sendPOST ?switch=2&schedule=;"
+		"timepicker3$%s,button$Imposta$sendPOST ?switch=3&schedule=;"
+		"timepicker4$%s,button$Imposta$sendPOST ?switch=4&schedule=;"
 		"timestamp1$Tempo CPU$%d ms;"
 };
 

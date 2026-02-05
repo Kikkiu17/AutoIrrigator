@@ -11,25 +11,6 @@
 #include <inttypes.h>
 #include "usart.h"
 
-const char valve_help_message[] =
-{
-		"Aiuto per \"valve\":"
-		"\ncontrolla le valvole per l\'irrigazione."
-		"\nStruttura richiesta: ?valve=n&cmd=x"
-		"\ndove: n = ID valvola; x = comando"
-		"\ncomandi disponibili:"
-		"\nopen; close"
-};
-
-const char at_help_message[] =
-{
-		"Aiuto per \"at\":"
-		"\ninvia un comando AT da far eseguire direttamente dall\'ESP."
-		"\nStruttura richiesta: ?at=<comando>"
-		"\n<comando> puo\' essere \"AT\" oppure \"AT+...\""
-		"\nnon inviare la sequenza \\r\\n alla fine del comando"
-};
-
 uint8_t SCHEDULE_SetSchedule(Valve_t* valve, char* new_schedule)
 {
 	Schedule_t* schedule = valve->schedule;
@@ -43,6 +24,7 @@ uint8_t SCHEDULE_SetSchedule(Valve_t* valve, char* new_schedule)
 		return 0;
 
 	memcpy(schedule->text, new_schedule, SCHEDULE_TIME_SIZE);
+	schedule->text[SCHEDULE_TIME_SIZE] = '\0';
 	return 1;
 }
 
@@ -62,7 +44,6 @@ void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb)
 		schedule->hour_close = bufferToInt(new_schedule + 6, 2);
 		schedule->minute_close = bufferToInt(new_schedule + 9, 2);
 		memcpy(schedule->text, new_schedule, SCHEDULE_TIME_SIZE);
-		__asm__("nop");
 	}
 }
 
@@ -84,9 +65,6 @@ Response_t AT_ExecuteRemoteATCommand(Connection_t* conn, char* command_ptr)
 
 	if (command == NULL)
 		AT_status = WIFI_SendResponse(conn, "400 Bad Request", "Comando non trovato", 31);
-
-	if (strstr(command, "help"))
-		return WIFI_SendResponse(conn, "200 OK", (char*)at_help_message, sizeof(at_help_message));
 
 	memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
 	memcpy(conn->wifi->buf, command, command_size);
@@ -155,9 +133,6 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	if (valve_id_ptr == NULL)
 		return WIFI_SendResponse(conn, "400 Bad Request", "ID non valido", 13);
 
-	if (strstr(valve_id_ptr, "help"))
-		return WIFI_SendResponse(conn, "200 OK", (char*)valve_help_message, sizeof(valve_help_message));
-
 	uint8_t requested_valve_id = *valve_id_ptr - '0';
 	if (requested_valve_id < 1 || requested_valve_id > 4 || requested_valve_id > list_size)
 		return WIFI_SendResponse(conn, "400 Bad Request", "ID non valido", 13);
@@ -170,8 +145,8 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	if (conn->request_type == GET)
 	{
 		memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
-		sprintf(conn->wifi->buf, "%s", valve->status);
-		return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, strlen(conn->wifi->buf));
+		conn->wifi->buf[0] = valve->isOpen + '0';
+		return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, 1);
 	}
 
 	char* cmd_key_ptr = NULL;
@@ -204,13 +179,13 @@ Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_lis
 	memset(conn->response_buffer, 0, RESPONSE_MAX_SIZE);
 	memcpy(conn->response_buffer, conn->request + cmd_index, cmd_size);*/
 
-	if (WIFI_RequestKeyHasValue(conn, cmd_key_ptr, "open"))
+	if (WIFI_RequestKeyHasValue(conn, cmd_key_ptr, "1"))
 	{
 		VALVE_Open(valve);
 		valve->has_manual_override = true;
 		return WIFI_SendResponse(conn, "200 OK", "Valvola aperta", 14);
 	}
-	else if(WIFI_RequestKeyHasValue(conn, cmd_key_ptr, "close"))
+	else if(WIFI_RequestKeyHasValue(conn, cmd_key_ptr, "0"))
 	{
 		VALVE_Close(valve);
 		valve->has_manual_override = false;
@@ -225,7 +200,6 @@ void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id, 
 	valve->flow = flow;
 	valve->schedule = schedule;
 	valve->id = id;
-	memcpy(valve->status, "chiusa", 6);
 	valve->gpio_port = valve_port;
 	valve->gpio_pin = valve_pin;
 	valve->has_manual_override = false;
@@ -234,14 +208,12 @@ void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id, 
 void VALVE_Open(Valve_t* valve)
 {
 	valve->isOpen = 1;
-	memcpy(valve->status, "aperta", 6);
 	HAL_GPIO_WritePin(valve->gpio_port, valve->gpio_pin, 1);
 }
 
 void VALVE_Close(Valve_t* valve)
 {
 	valve->isOpen = 0;
-	memcpy(valve->status, "chiusa", 6);
 	HAL_GPIO_WritePin(valve->gpio_port, valve->gpio_pin, 0);
 }
 

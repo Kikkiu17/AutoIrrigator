@@ -20,6 +20,7 @@
 #include "main.h"
 #include "adc.h"
 #include "dma.h"
+#include "stm32g0xx_hal_gpio.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -128,21 +129,40 @@ int main(void)
   if (ESP8266_Init() == TIMEOUT)
   {
 	  while (1)
-		  __asm__("nop");
+		  __NOP();
   }
 
+#ifdef ENABLE_SAVE_TO_FLASH
+  FLASH_ReadSaveData();
+  if (WIFI_SetName(&wifi, savedata.name) == ERR)
+    WIFI_SetName(&wifi, (char*)ESP_NAME); // happens when there is nothing saved to FLASH, so set default name
+  WIFI_SetIP(&wifi, savedata.ip);         // if there is nothing saved to FLASH, this function does nothing
+#else
+  WIFI_SetName(&wifi, (char*)ESP_NAME);
+#endif
 
   memcpy(wifi.SSID, ssid, strlen(ssid));
   memcpy(wifi.pw, password, strlen(password));
-  WIFI_Connect(&wifi);
-  //WIFI_SetIP(&wifi, (char*)ESP_IP);
-  //WIFI_SetHostname(&wifi, (char*)ESP_HOSTNAME);
-  WIFI_SetName(&wifi, (char*)ESP_NAME);
+  HAL_GPIO_WritePin(STATUS_Port, STATUS_Pin, 1);
+  uint32_t connect_status = WIFI_Connect(&wifi);
+  if (connect_status == FAIL || connect_status == ERROR)
+  {
+    // try again
+    NVIC_SystemReset();
+  }
+  HAL_GPIO_WritePin(STATUS_Port, STATUS_Pin, 0);
   WIFI_EnableNTPServer(&wifi, 2);
 
-  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
+  /*
+  The first time the ESP connects to WiFi, the gateway assigns an IP to it, which now gets saved to FLASH.
+  The next time the ESP connects, the gateway could assign a different IP; to prevent this, the function
+  WIFI_SetIP(&wifi, savedata.ip); loads the IP previously saved on FLASH so that the ESP tries to connect
+  and get this IP
+  */
+  strncpy(savedata.ip, wifi.IP, 15);
+  FLASH_WriteSaveData();
+
   WIFI_StartServer(&wifi, SERVER_PORT);
-  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 
   HAL_TIM_IC_Start_IT(&htim14, TIM_CHANNEL_1);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -163,8 +183,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t timestamp = 0;
-  uint32_t strobeon = 0;
-  uint8_t strobeoff = 0;
+  uint8_t seconds = 0;
   while (1)
   {
 	  BATTERY_GetVoltage();
@@ -176,13 +195,7 @@ int main(void)
 		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 		  char* key_ptr = NULL;
 
-		  if (WIFI_RequestHasKey(&conn, "help"))
-		  {
-			  SCHEDULE_ReadFromFlash(valve_list, VALVES_NUM);
-			  WIFIHANDLER_HandleHelpRequest(&conn);
-		  }
-
-		  else if ((key_ptr = WIFI_RequestHasKey(&conn, "valve")))
+		  if ((key_ptr = WIFI_RequestHasKey(&conn, "switch")))
 			  WIFIHANDLER_HandleValveRequest(&conn, valve_list, VALVES_NUM, key_ptr);
 
 		  else if ((key_ptr = WIFI_RequestHasKey(&conn, "wifi")))
@@ -197,14 +210,14 @@ int main(void)
 			  else if ((key_ptr = WIFI_RequestHasKey(&conn, "weather")))
 				  WIFIHANDLER_HandleWeatherRequest(&weather, &conn, key_ptr);
 			  else
-				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto. Scrivi help per una lista di comandi", 62);
+				  WIFI_SendResponse(&conn, "404 Not Found", "", 0);
 		  }
 		  else if (conn.request_type == POST)
 		  {
 			  if ((key_ptr = WIFI_RequestHasKey(&conn, "at")))
 				  AT_ExecuteRemoteATCommand(&conn, key_ptr);
 			  else
-				  WIFI_SendResponse(&conn, "404 Not Found", "Comando non riconosciuto. Scrivi help per una lista di comandi", 62);
+				  WIFI_SendResponse(&conn, "404 Not Found", "", 0);
 		  }
 		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
 	  }
@@ -223,19 +236,6 @@ int main(void)
 	  else
 		  WIFI_response_sent = false;
 
-	  if (uwTick - strobeon > STROBE_DELAY)
-	  {
-		  strobeon = uwTick;
-		  strobeoff = 1;
-		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-	  }
-
-	  if (strobeoff && uwTick - strobeon > STROBE_DURATION)
-	  {
-		  strobeoff = 0;
-		  HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-	  }
-
 	  // HANDLE WATER FLOW
 	  // check flow for each valve
 	  for (uint32_t i = 0; i < VALVES_NUM; i++)
@@ -247,12 +247,12 @@ int main(void)
 	  }
 
 	  // get time every minute and every 15 minutes get the forecast
-	  if (uwTick - timestamp > 60000)
+	  if (uwTick - timestamp > (60 - seconds) * 1000)
 	  {
 		  time_hour = WIFI_GetTimeHour(&wifi);
 		  time_minute = WIFI_GetTimeMinutes(&wifi);
-		  uint8_t seconds = WIFI_GetTimeSeconds(&wifi);
-		  timestamp = uwTick - seconds * 1000;
+		  seconds = WIFI_GetTimeSeconds(&wifi);
+		  timestamp = uwTick;
 
 		  // --------- UPDATE FORECAST ---------
 		  if (time_minute % 15 == 0)
@@ -425,8 +425,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
