@@ -151,7 +151,7 @@ int main(void)
     NVIC_SystemReset();
   }
   HAL_GPIO_WritePin(STATUS_Port, STATUS_Pin, 0);
-  WIFI_EnableNTPServer(&wifi, 2);
+  WIFI_EnableNTPServer(&wifi, 0);
 
   /*
   The first time the ESP connects to WiFi, the gateway assigns an IP to it, which now gets saved to FLASH.
@@ -183,7 +183,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t timestamp = 0;
-  uint8_t seconds = 0;
+  uint8_t seconds = 60;
   while (1)
   {
 	  BATTERY_GetVoltage();
