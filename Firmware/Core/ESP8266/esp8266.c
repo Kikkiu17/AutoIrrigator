@@ -633,9 +633,6 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 
 	// get the request size
 	uint32_t request_size;
-	ptr = strstr((char*)uart_buffer, " HTTP");
-	if (ptr == NULL)
-	{
 		// if there is no HTTP/x.x use the message size m (at ptr + 7)
 		// +IPD,n,m:GET ?xxxxxxxxxx
 		request_size = expected_size;
@@ -646,16 +643,6 @@ Response_t WIFI_ReceiveRequest(WIFI_t* wifi, Connection_t* conn, uint32_t timeou
 		// the size of "+IPD,n,m:" to get the size of "POST "
 		request_start_index = ptr - uart_buffer;
 		request_size = request_size - (request_body_start_index - request_start_index) + 1 - 2; // the -2 removes \r\n
-	}
-	else
-	{
-		// otherwise get this length
-		// 				 v -----> v
-		// +IPD,n,m:GET ?xxxxxxxxxx HTTP....
-		uint32_t request_end_index = (ptr - 1) - uart_buffer;
-		if (request_end_index < request_body_start_index) return ERR;
-		request_size = request_end_index - request_body_start_index + 1;
-	}
 	if (request_size > REQUEST_MAX_SIZE) return ERR;
 	conn->request_size = request_size;
 
