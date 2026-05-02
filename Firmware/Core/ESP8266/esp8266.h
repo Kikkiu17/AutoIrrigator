@@ -12,6 +12,7 @@
 #include "usart.h"
 #include "../settings.h"
 
+#define RECONNECT_CHECK_INTERVAL 60000 // in milliseconds
 extern bool WIFI_response_sent;
 
 typedef enum
@@ -53,6 +54,8 @@ typedef struct
 } Connection_t;
 
 int32_t bufferToInt(char* buf, uint32_t size);
+void intToBuffer(char *buf, int32_t n, uint32_t size);
+void addPaddingRight(char *buf, int32_t n, uint32_t size, char padding);
 
 Response_t ESP8266_Init(void);
 void ESP8266_ClearBuffer(void);
@@ -78,10 +81,12 @@ If it's already connected, it saves the current IP and SSID in the WIFI_t struct
 Note that this is a blocking function: if not connected to WiFi, it blocks until it connects or it timeouts (15 seconds)
 */
 Response_t WIFI_Connect(WIFI_t* wifi);
+Response_t WIFI_ReconnectIfDisconnected(WIFI_t* wifi);
 Response_t WIFI_GetConnectionInfo(WIFI_t* wifi);
 Response_t WIFI_SetCWMODE(uint8_t mode);
 Response_t WIFI_SetCIPMUX(uint8_t mux);
 Response_t WIFI_SetCIPSERVER(uint16_t server_port);
+Response_t WIFI_SetConnectionTimeout(uint16_t timeout);
 Response_t WIFI_SetHostname(WIFI_t* wifi, const char* hostname);
 Response_t WIFI_GetHostname(WIFI_t* wifi);
 Response_t WIFI_SetName(WIFI_t* wifi, char* name);

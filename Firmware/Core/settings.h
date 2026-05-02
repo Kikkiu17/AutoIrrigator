@@ -8,18 +8,31 @@
 #ifndef SETTINGS_H_
 #define SETTINGS_H_
 
+#include <inttypes.h>
+#include "stm32g0xx.h"
+
 typedef uint8_t bool;
 #define true 1
 #define false 0
 
 // CHANGE THESE SETTINGS ACCORDING TO YOUR SETUP!!!
-#define STM_UART huart1
-#define UART_DMA_CHANNEL DMA1_Channel1
-#define ESP_RST_PORT ESPRST_GPIO_Port
-#define ESP_RST_PIN ESPRST_Pin
+#define STM_UART					huart1
+#define UART_DMA_CHANNEL_HANDLE		DMA1_Channel1
+#define UART_DMA_LL_CHANNEL			LL_DMA_CHANNEL_1
+#define UART_DMA_TYPEDEF			DMA1
+#define ESP_RST_PORT				ESPRST_GPIO_Port
+#define ESP_RST_PIN					ESPRST_Pin
 
-#define STATUS_Port STATUS_GPIO_Port
-//#define STATUS_Pin STATUS_Pin
+#define STATUS_Port					STATUS_GPIO_Port
+//#define STATUS_Pin					STATUS_Pin
+
+// if START_ATTEMPTS is set to -1, the program won't start until it receives
+// "ready" from the ESP (infinite retries)
+#define START_ATTEMPTS -1
+
+// ==========================================================================================
+// 										USER DEFINES
+// ==========================================================================================
 
 // ==========================================================================================
 // 											FLASH
@@ -42,12 +55,12 @@ typedef uint64_t FLASH_DATATYPE;
 // ==========================================================================================
 // 									NETWORK (esp8266.h)
 // ==========================================================================================
-static const char ESP_NAME[] = "Hub irrigazione";
+static const char RADIO_POWER[] = "70";
+
+static const char ESP_NAME[] = "SNSE device";
 #define SERVER_PORT 34677
 
-// NOT SUPPORTED:
-static const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
-//static const char ESP_IP[] = "192.168.1.38";
+static const char ESP_HOSTNAME[] = "SNSEDEVICE04"; // template: SNSEDEVICExx
 
 #define AT_SHORT_TIMEOUT 250
 #define AT_MEDIUM_TIMEOUT 500
@@ -74,11 +87,8 @@ static const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
 /**
  * WIFI_BUF_MAX_SIZE
  *
- * contains short commands to be sent to the ESP, for example to connect it to WiFi, to get the current IP...
- * (check esp8266.c)
- * if you don't use it directly, it can be left at the default value.
- * NOTE: this can contain the network SSID and PASSWORD, so if those strings are larger than this buffer,
- * the network name and/or its password will be truncated, resulting in no WiFi connection!
+ * the longest content is usually the FEATURES array, so the minimum size should be the size of
+ * FEATURES_TEMPLATE. usually this is the reason of most hard faults, so try increasing it
  */
 #define WIFI_BUF_MAX_SIZE 800
 
@@ -99,13 +109,18 @@ static const char ESP_HOSTNAME[] = "ESPDEVICE002"; // template: ESPDEVICExxx
 #define UART_TX_TIMEOUT 500			// ms
 #define UART_RX_IDLE_TIMEOUT 3000	// ms
 
-typedef struct notif
+#define RECONNECTION_DELAY_MINS 1	// minutes
+#define RECONNECTION_DELAY_MILLIS RECONNECTION_DELAY_MINS * 60000
+
+typedef struct
 {
 	char* text;
 	uint8_t size;
+	bool read;
+	bool clear_if_read;
 } Notification_t;
 
-extern Notification_t notification;
+extern Notification_t notification;	// defined in wifihandler/wifihandler.c
 
 // ==========================================================================================
 // 									IRRIGATION / SCHEDULE
@@ -159,16 +174,17 @@ typedef struct valve
 // ==========================================================================================
 /**
  * The save data will be written to the last page of the memory bank
- * See FLASH section at the top of the file
+ * 					!!!See FLASH section at the top of the file!!!
  */
 
 /**
- * Schedules are saved consecutively without separators, like
- * 08:00-08:150830-08:45 (these are two consecutive schedules)
- * They can be retrieved by reading SCHEDULE_TIME_SIZE at
- * each index: SCHEDULE_TIME_SIZE * i
- * where i is the index of the valve (0, 1, 2...)
- */
+* Schedules are saved consecutively without separators, like
+* 08:00-08:150830-08:45 (these are two consecutive schedules)
+* They can be retrieved by reading SCHEDULE_TIME_SIZE at
+* each index: SCHEDULE_TIME_SIZE * i
+* where i is the index of the valve (0, 1, 2...)
+*/
+#ifdef ENABLE_SAVE_TO_FLASH
 typedef struct sdata
 {
 	char schedules[SCHEDULE_TIME_SIZE * VALVES_NUM];
@@ -177,12 +193,7 @@ typedef struct sdata
 } SaveData_t;
 
 extern SaveData_t savedata;
-
-// ==========================================================================================
-// 											OTHER
-// ==========================================================================================
-
-#define START_ATTEMPTS 4
+#endif
 
 // ==========================================================================================
 // 										COMM TEMPLATE
@@ -208,10 +219,29 @@ extern SaveData_t savedata;
  * FEATURE				SYNTAX												OPTIONAL SYNTAX
  * sensor				sensorX$text$%d text
  * switch				switchX$text,status$%d								switchX$switch_name,status$%d,sensor$sensor_name$%d
- * textinut				textinputX$default_text								textinputX$txt_name,button$btn_name$send<command> (without a space)
+ *		status has to be 0 or 1, according to the switch state
+ * textinput				textinputX$default_text								textinputX$txt_name,button$btn_name$send<command> (without a space)
  * 		text inside the textinput field will be appended at the end of the command to be sent
  * timepicker			timepicker$%s (time data, should be hh:mm-hh:mm)	timepicker$%s,button$btn_name$send<command>
  * timestamp			timestampX$text$d text
+ * external				externalX$id
+ * 		external features have an ID, read by the android app, which identifies a feature that will be retrieved from
+ * 		a server specified on the android app. the server will return the feature itself that will be displayed
+ * 		on the device page on the app.
+ *
+ * 		external features:
+ * 		1 = GRAPH
+ *			to mark a SENSOR to be put on the graph, append:
+ *			$graph_LineLabel (unit)
+ *			LineLabel will be the label of the graph data. this unit will be used for the DAYS time frame.
+ *
+ *			if you need another unit for MONTHS and YEARS, append:
+ *			$graph_LineLabel1 (unit1)_LineLabel2 (unit2)
+ *			LineLabel1 and unit1 will be used for DAYS; LineLabel2 and unit2 will be used for MONTHS and YEARS
+ *
+ *			example: "sensor1$Power$%d W$graph_Average power (W)_Energy (Wh);"
+ *
+ * 		NOTE: external features will only be updated ONCE, every time the device is loaded in the app. The user can manually refresh the data.
  */
 
 typedef struct bat
@@ -226,27 +256,28 @@ extern Battery_t bat;
 
 static const char FEATURES_TEMPLATE[] =
 {
-		"sensor1$Flusso totale$%d litri/h;"
-		"sensor2$Tensione batteria$%d,%d V;"
-		"switch1$Ovest,status$%d,sensor$Litri/h$%d;"
-		"switch2$Sud,status$%d,sensor$Litri/h$%d;"
-		"switch3$Sud-Est,status$%d,sensor$Litri/h$%d;"
-		"switch4$Est,status$%d;"
-		"timepicker1$%s,button$Imposta$sendPOST ?switch=1&schedule=;"
-		"timepicker2$%s,button$Imposta$sendPOST ?switch=2&schedule=;"
-		"timepicker3$%s,button$Imposta$sendPOST ?switch=3&schedule=;"
-		"timepicker4$%s,button$Imposta$sendPOST ?switch=4&schedule=;"
-		"timestamp1$Tempo CPU$%d ms;"
+	"sensor1$Flusso totale$%d litri/h$graph_Flusso totale (L/h)_Acqua (L);"
+	"sensor2$Tensione batteria$%s,%s V$graph_Batteria (V)_Acqua (L);"
+	"switch1$Ovest,status$%d,sensor$Litri/h$%d$graph_Flusso ovest (L/h)_Acqua (L);"
+	"switch2$Sud,status$%d,sensor$Litri/h$%d$graph_Flusso sud (L/h)_Acqua (L);"
+	"switch3$Sud-Est,status$%d,sensor$Litri/h$%d$graph_Flusso sud-est (L/h)_Acqua (L);"
+	"switch4$Est,status$%d;"
+	"timepicker1$%s,button$Imposta$sendPOST ?switch=1&schedule=;"
+	"timepicker2$%s,button$Imposta$sendPOST ?switch=2&schedule=;"
+	"timepicker3$%s,button$Imposta$sendPOST ?switch=3&schedule=;"
+	"timepicker4$%s,button$Imposta$sendPOST ?switch=4&schedule=;"
+	"timestamp1$Tempo CPU$%d ms;"
+	"external1$1;"
 };
 
 static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] =
 {
-		"1$Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore"
+	"1$Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore"
 };
 
 static const char NOTIFICATION_LOW_BATTERY[] =
 {
-		"2$Batteria scarica!"
+	"2$Batteria scarica!"
 };
 
 #endif /* SETTINGS_H_ */

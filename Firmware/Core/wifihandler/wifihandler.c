@@ -103,9 +103,13 @@ Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
 Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* features_template)
 {
 	memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
+	char bat_dec[3] = {0};
+	char bat_int[3] = {0};
+	intToBuffer(bat_dec, bat.voltage_decimal, 2);
+	intToBuffer(bat_int, bat.voltage_integer, 2);
 	sprintf(conn->wifi->buf, features_template,
 			valve_list[3].flow->lt_per_hour,	// il flussimetro generale è associato alla valvola 4
-			bat.voltage_integer, bat.voltage_decimal,
+			bat_int, bat_dec,
 			valve_list[0].isOpen, valve_list[0].flow->lt_per_hour,
 			valve_list[1].isOpen, valve_list[1].flow->lt_per_hour,
 			valve_list[2].isOpen, valve_list[2].flow->lt_per_hour,

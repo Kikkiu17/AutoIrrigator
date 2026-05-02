@@ -78,3 +78,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
 set(CMAKE_C_FLAGS_DEBUG "-O0 -g")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+
+
+target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -flto
+)

@@ -127,8 +127,8 @@ int main(void)
   // ESPRST is HIGH by default (set up in .ioc file) so ESP is enabled by default
   if (ESP8266_Init() == TIMEOUT)
   {
-	  while (1)
-		  __NOP();
+	while (1)
+		__NOP();
   }
 
 #ifdef ENABLE_SAVE_TO_FLASH
@@ -150,7 +150,7 @@ int main(void)
     NVIC_SystemReset();
   }
   HAL_GPIO_WritePin(STATUS_Port, STATUS_Pin, 0);
-  WIFI_EnableNTPServer(&wifi, 0);
+  WIFI_EnableNTPServer(&wifi, 2);
 
   /*
   The first time the ESP connects to WiFi, the gateway assigns an IP to it, which now gets saved to FLASH.
