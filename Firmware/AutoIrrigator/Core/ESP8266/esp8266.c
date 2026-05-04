@@ -824,7 +824,13 @@ Response_t WIFI_SendResponse(Connection_t* conn, char* status_code, char* body, 
     
     // copy body if it exists
     if (body != NULL && body_length > 0)
+	{
+		// if string has terminator, replace it with a space so
+		// that it can be printed correctly
+		if (body[body_length - 1] == '\0')
+			body[body_length - 1] = ' ';
         memcpy(conn->response_buffer + status_len + 1, body, body_length);
+	}
     
     // add \r\n to the end
     // start + status + \n + body

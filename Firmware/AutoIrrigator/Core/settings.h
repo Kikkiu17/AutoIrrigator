@@ -55,7 +55,7 @@ typedef uint64_t FLASH_DATATYPE;
 // ==========================================================================================
 // 									NETWORK (esp8266.h)
 // ==========================================================================================
-static const char RADIO_POWER[] = "70";
+static const char RADIO_POWER[] = "65";
 
 static const char ESP_NAME[] = "SNSE device";
 #define SERVER_PORT 34677
@@ -256,11 +256,11 @@ extern Battery_t bat;
 
 static const char FEATURES_TEMPLATE[] =
 {
-	"sensor1$Flusso totale$%d litri/h$graph_Flusso totale (L/h)_Acqua (L);"
-	"sensor2$Tensione batteria$%s,%s V$graph_Batteria (V)_Acqua (L);"
-	"switch1$Ovest,status$%d,sensor$Litri/h$%d$graph_Flusso ovest (L/h)_Acqua (L);"
-	"switch2$Sud,status$%d,sensor$Litri/h$%d$graph_Flusso sud (L/h)_Acqua (L);"
-	"switch3$Sud-Est,status$%d,sensor$Litri/h$%d$graph_Flusso sud-est (L/h)_Acqua (L);"
+	"sensor1$Flusso totale$%d litri/h$graph_Flusso totale (L/h)_Acqua totale (L);"
+	"sensor2$Tensione batteria$%s,%s V$graph_Batteria (V);"
+	"switch1$Ovest,status$%d,sensor$Litri/h$%d$graph_Flusso ovest (L/h)_Acqua ovest (L);"
+	"switch2$Sud,status$%d,sensor$Litri/h$%d$graph_Flusso sud (L/h)_Acqua sud (L);"
+	"switch3$Sud-Est,status$%d,sensor$Litri/h$%d$graph_Flusso sud-est (L/h)_Acqua sud-est (L);"
 	"switch4$Est,status$%d;"
 	"timepicker1$%s,button$Imposta$sendPOST ?switch=1&schedule=;"
 	"timepicker2$%s,button$Imposta$sendPOST ?switch=2&schedule=;"

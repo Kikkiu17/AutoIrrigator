@@ -227,7 +227,7 @@ int8_t WEATHER_GetTodayLastPrecipitation(Weather_t* wx)
 	int8_t last_precipitation_hour = -1;
 	for (uint8_t h = 0; h < 24; h++)
 	{
-		if (wx->hourly_precipitation[h] > PRECIPITATION_THRESHOLD)
+		if (wx->hourly_precipitation[h] >= PRECIPITATION_THRESHOLD)
 			last_precipitation_hour = h;
 	}
 	return last_precipitation_hour;
@@ -237,7 +237,7 @@ int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx)
 {
 	for (uint8_t h = 0; h < 24; h++)
 	{
-		if (wx->hourly_precipitation[h] > PRECIPITATION_THRESHOLD)
+		if (wx->hourly_precipitation[h] >= PRECIPITATION_THRESHOLD)
 			return h;
 	}
 	return -1;
