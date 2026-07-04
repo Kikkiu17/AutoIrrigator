@@ -14,9 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-Response_t AT_ExecuteRemoteATCommand(Connection_t* conn, char* command_ptr);
-Response_t WIFIHANDLER_HandleValveRequest(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* key_ptr);
-
+void SCHEDULE_Save(Valve_t* valve_list, uint8_t valves_nb);
 uint8_t SCHEDULE_SetSchedule(Valve_t* valve, char* new_schedule);
 void SCHEDULE_WriteToFlash(Valve_t* valve_list, uint8_t valves_nb);
 void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb);
@@ -24,6 +22,5 @@ void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id, 
 void VALVE_Open(Valve_t* valve);
 void VALVE_Close(Valve_t* valve);
 void FLOW_CalculateFlow(Flow_t* flow);
-Response_t WIFIHANDLER_HandleScheduleRequest(Connection_t* conn, char* command_ptr, Valve_t* valve);
 
 #endif /* IRRIGATOR_IRRIGATOR_H_ */

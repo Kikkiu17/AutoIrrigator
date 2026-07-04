@@ -1,8 +1,7 @@
 /*
- * wifi.h
+ * wifihandler.h
  *
- *  Created on: Apr 12, 2025
- *      Author: Kikkiu
+ * Modified for: MQTT Client
  */
 
 #ifndef WIFI_WIFIHANDLER_H_
@@ -14,15 +13,17 @@
 
 #include "../ESP8266/esp8266.h"
 #include "../irrigator/irrigator.h"
-#include "../weather/weather.h"
 #include "../settings.h"
 
-Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr);
-Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* features_template);
-Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, char* key_ptr);
-Response_t WIFIHANDLER_HandleNotificationRequest(Connection_t* conn, char* key_ptr);
-
-void NOTIFICATION_Reset();
+Response_t WIFIHANDLER_MQTT_Init(WIFI_t* wifi, const char* broker_ip, uint16_t port);
+void WIFIHANDLER_MQTT_PublishDiscovery(WIFI_t* wifi);
+void WIFIHANDLER_MQTT_PublishStates(WIFI_t* wifi, Valve_t* valve_list);
+void WIFIHANDLER_MQTT_Loop(WIFI_t* wifi, Valve_t* valve_list);
+void WIFIHANDLER_MQTT_SendNotification(WIFI_t* wifi, const char* message);
 void NOTIFICATION_Set(char* text, uint8_t size);
+void NOTIFICATION_Reset(void);
+
+#define RECONNECT_CHECK_INTERVAL 60000 // in milliseconds
+Response_t WIFIHANDLER_ReconnectIfDisconnected(WIFI_t *wifi);
 
 #endif /* WIFI_WIFIHANDLER_H_ */

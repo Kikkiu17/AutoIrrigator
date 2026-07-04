@@ -61,7 +61,6 @@ uint8_t time_hour;
 uint8_t time_minute;
 
 WIFI_t wifi;
-Connection_t conn;
 
 Valve_t valve_list[VALVES_NUM];
 Flow_t flow1;
@@ -161,8 +160,6 @@ int main(void)
   strncpy(savedata.ip, wifi.IP, 15);
   FLASH_WriteSaveData();
 
-  WIFI_StartServer(&wifi, SERVER_PORT);
-
   HAL_TIM_IC_Start_IT(&htim14, TIM_CHANNEL_1);
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
   HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
@@ -177,154 +174,136 @@ int main(void)
   SCHEDULE_ReadFromFlash(valve_list, VALVES_NUM);
 
   HAL_ADCEx_Calibration_Start(&hadc1);
+
+  if (connect_status == OK)
+  {
+    if (WIFIHANDLER_MQTT_Init(&wifi, MQTT_BROKER_IP, MQTT_BROKER_PORT) == OK) 
+    {
+      WIFIHANDLER_MQTT_PublishDiscovery(&wifi);
+      WIFIHANDLER_MQTT_PublishStates(&wifi, valve_list);
+    }
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t timestamp = 0;
   uint8_t seconds = 60;
+  uint32_t last_mqtt_publish = 0;
+
+  bool low_bat_notification = false;
+  bool valves_closed_notification = false;
+
   while (1)
   {
-	BATTERY_GetVoltage();
+    BATTERY_GetVoltage();
 
-	// HANDLE WIFI CONNECTION
-	Response_t status = WIFI_ReceiveRequest(&wifi, &conn, AT_SHORT_TIMEOUT);
-	if (status == OK)
-	{
-		HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-		char* key_ptr = NULL;
+    HAL_GPIO_WritePin(STATUS_Port, STATUS_Pin, 1);
+    WIFIHANDLER_MQTT_Loop(&wifi, valve_list);
+    
+    WIFIHANDLER_ReconnectIfDisconnected(&wifi);
+    
+    if (HAL_GetTick() - last_mqtt_publish > MQTT_PUBLISH_INTERVAL) 
+    {
+      last_mqtt_publish = HAL_GetTick();
+      WIFIHANDLER_MQTT_PublishStates(&wifi, valve_list);
+    }
+    HAL_GPIO_WritePin(STATUS_Port, STATUS_Pin, 0);
 
-		if ((key_ptr = WIFI_RequestHasKey(&conn, "switch")))
-			WIFIHANDLER_HandleValveRequest(&conn, valve_list, VALVES_NUM, key_ptr);
+    // HANDLE WATER FLOW
+    // check flow for each valve
+    for (uint32_t i = 0; i < VALVES_NUM; i++)
+    {
+      Valve_t* valve = &(valve_list[i]);
+      if (valve->flow == NULL) continue;
+      if (uwTick - valve->flow->ic_timestamp > MAX_FLOW_PERIOD)
+        valve->flow->lt_per_hour = 0;
+    }
 
-		else if ((key_ptr = WIFI_RequestHasKey(&conn, "wifi")))
-			WIFIHANDLER_HandleWiFiRequest(&conn, key_ptr);
+    // get time every minute and every 15 minutes get the forecast
+    if (uwTick - timestamp > (60 - seconds) * 1000)
+    {
+      time_hour = WIFI_GetTimeHour(&wifi);
+      time_minute = WIFI_GetTimeMinutes(&wifi);
+      seconds = WIFI_GetTimeSeconds(&wifi);
+      timestamp = uwTick;
 
-		else if (conn.request_type == GET)
-		{
-			if ((key_ptr = WIFI_RequestHasKey(&conn, "features")))
-				WIFIHANDLER_HandleFeaturePacket(&conn, valve_list, VALVES_NUM, (char*)FEATURES_TEMPLATE);
-			else if ((key_ptr = WIFI_RequestHasKey(&conn, "notification")))
-				WIFIHANDLER_HandleNotificationRequest(&conn, key_ptr);
-			else if ((key_ptr = WIFI_RequestHasKey(&conn, "weather")))
-				WIFIHANDLER_HandleWeatherRequest(&weather, &conn, key_ptr);
-			else
-				WIFI_SendResponse(&conn, "404 Not Found", "", 0);
-		}
-		else if (conn.request_type == POST)
-		{
-			if ((key_ptr = WIFI_RequestHasKey(&conn, "at")))
-				AT_ExecuteRemoteATCommand(&conn, key_ptr);
-			else
-				WIFI_SendResponse(&conn, "404 Not Found", "", 0);
-		}
-		HAL_GPIO_TogglePin(STATUS_GPIO_Port, STATUS_Pin);
-	}
-	else if (status != TIMEOUT)
-	{
-		sprintf(wifi.buf, "Status: %d", status);
-		WIFI_ResetComm(&wifi, &conn);
-		WIFI_SendResponse(&conn, "500 Internal server error", wifi.buf, strlen(wifi.buf));
-	}
+      // --------- UPDATE FORECAST ---------
+      if (time_minute % 15 == 0)
+        WEATHER_GetForecast(&weather, ESP8266_GetBuffer());
 
-	if (!WIFI_response_sent)
-	{
-		if (status == ERR || status == NULVAL)
-			WIFI_ResetComm(&wifi, &conn);
-	}
-	else
-		WIFI_response_sent = false;
+      if (time_hour == 23)
+        yesterday_last_precipitation_hour = WEATHER_GetTodayLastPrecipitation(&weather);
 
-	// HANDLE WATER FLOW
-	// check flow for each valve
-	for (uint32_t i = 0; i < VALVES_NUM; i++)
-	{
-		Valve_t* valve = &(valve_list[i]);
-		if (valve->flow == NULL) continue;
-		if (uwTick - valve->flow->ic_timestamp > MAX_FLOW_PERIOD)
-			valve->flow->lt_per_hour = 0;
-	}
+      // --------- CLOSE VALVES WHEN BATTERY IS LOW AND SKIP EVERYTHING ---------
+      if ((bat.voltage_integer == 11 && bat.voltage_decimal <= 50) || bat.voltage_integer < 11)
+      {
+        if (!low_bat_notification)
+        {
+          low_bat_notification = true;
+          WIFIHANDLER_MQTT_SendNotification(&wifi, (char*)NOTIFICATION_LOW_BATTERY);
+        }
 
-	// get time every minute and every 15 minutes get the forecast
-	if (uwTick - timestamp > (60 - seconds) * 1000)
-	{
-		time_hour = WIFI_GetTimeHour(&wifi);
-		time_minute = WIFI_GetTimeMinutes(&wifi);
-		seconds = WIFI_GetTimeSeconds(&wifi);
-		timestamp = uwTick;
+        for (uint32_t i = 0; i < VALVES_NUM; i++)
+          VALVE_Close(&valve_list[i]);
+        continue;	// skip valves logic. weather was already updated
+      }
+      else
+        low_bat_notification = false;
 
-		// --------- UPDATE FORECAST ---------
-		if (time_minute % 15 == 0)
-			WEATHER_GetForecast(&weather, ESP8266_GetBuffer());
+      // --------- KEEP VALVES CLOSED IF IT RAINED LESS THAN 12 HOURS AGO ---------
+      bool keep_valves_closed = false;
+      if (yesterday_last_precipitation_hour != -1)
+      {
+        uint8_t time_diff_past = 24 - yesterday_last_precipitation_hour + time_hour;
+        if (time_diff_past <= 12)
+          keep_valves_closed = true;
+      }
 
-		if (time_hour == 23)
-			yesterday_last_precipitation_hour = WEATHER_GetTodayLastPrecipitation(&weather);
+      // --------- KEEP VALVES CLOSED IF IT WILL RAIN IN THE NEXT 12 HOURS ---------
+      uint8_t time_diff_future = WEATHER_GetTodayNextPrecipitation(&weather) - time_hour;
+      if (time_diff_future <= 12)
+        keep_valves_closed = true;
 
-		// --------- CLOSE VALVES WHEN BATTERY IS LOW AND SKIP EVERYTHING ---------
-		if ((bat.voltage_integer == 11 && bat.voltage_decimal <= 50) || bat.voltage_integer < 11)
-		{
-			NOTIFICATION_Set((char*)NOTIFICATION_LOW_BATTERY, sizeof(NOTIFICATION_LOW_BATTERY));
+      if (weather.current_precipitation >= PRECIPITATION_THRESHOLD)
+        keep_valves_closed = true;
 
-			for (uint32_t i = 0; i < VALVES_NUM; i++)
-				VALVE_Close(&valve_list[i]);
-			continue;	// skip valves logic. weather was already updated
-		}
-		else if (notification.text == (char*)NOTIFICATION_LOW_BATTERY)
-			NOTIFICATION_Reset();
+      if (keep_valves_closed && !valves_closed_notification)
+        WIFIHANDLER_MQTT_SendNotification(&wifi, NOTIFICATION_WEATHER_NO_VALVE_OPEN);
+      else
+        valves_closed_notification = false;
 
-		// --------- KEEP VALVES CLOSED IF IT RAINED LESS THAN 12 HOURS AGO ---------
-		bool keep_valves_closed = false;
-		if (yesterday_last_precipitation_hour != -1)
-		{
-			uint8_t time_diff_past = 24 - yesterday_last_precipitation_hour + time_hour;
-			if (time_diff_past <= 12)
-				keep_valves_closed = true;
-		}
+      // --------- CLOSE/OPEN VALVES ---------
+      for (uint32_t i = 0; i < VALVES_NUM; i++)
+      {
+        // code executed for each valve
+        Valve_t* valve = &(valve_list[i]);
 
-		// --------- KEEP VALVES CLOSED IF IT WILL RAIN IN THE NEXT 12 HOURS ---------
-		uint8_t time_diff_future = WEATHER_GetTodayNextPrecipitation(&weather) - time_hour;
-		if (time_diff_future <= 12)
-			keep_valves_closed = true;
+        if (keep_valves_closed)
+        {
+          // executed when rain is last/next 12 hours
+          if (!valve->has_manual_override)
+            VALVE_Close(valve);
+        }
+        else
+        {
+          // executed in normal conditions (no rain)
+          // open the valve following schedule only if it doesn't rain
+          if (time_hour == valve->schedule->hour_open && time_minute == valve->schedule->minute_open)
+          {
+            valve->has_manual_override = false;
+            VALVE_Open(valve);
+          }
+        }
 
-		if (weather.current_precipitation >= PRECIPITATION_THRESHOLD)
-			keep_valves_closed = true;
-
-		if (keep_valves_closed)
-			NOTIFICATION_Set((char*)NOTIFICATION_WEATHER_NO_VALVE_OPEN, sizeof(NOTIFICATION_WEATHER_NO_VALVE_OPEN));
-		else if (notification.text == (char*)NOTIFICATION_WEATHER_NO_VALVE_OPEN)
-			NOTIFICATION_Reset();
-
-		// --------- CLOSE/OPEN VALVES ---------
-		for (uint32_t i = 0; i < VALVES_NUM; i++)
-		{
-			// code executed for each valve
-			Valve_t* valve = &(valve_list[i]);
-
-			if (keep_valves_closed)
-			{
-				// executed when rain is last/next 12 hours
-				if (!valve->has_manual_override)
-					VALVE_Close(valve);
-			}
-			else
-			{
-				// executed in normal conditions (no rain)
-				// open the valve following schedule only if it doesn't rain
-				if (time_hour == valve->schedule->hour_open && time_minute == valve->schedule->minute_open)
-				{
-					valve->has_manual_override = false;
-					VALVE_Open(valve);
-				}
-			}
-
-			// close valve anyway (following schedule), regardless of rain/manual override
-			if (time_hour == valve->schedule->hour_close && time_minute == valve->schedule->minute_close)
-			{
-				valve->has_manual_override = false;
-				VALVE_Close(valve);
-			}
-		}
-	}
+        // close valve anyway (following schedule), regardless of rain/manual override
+        if (time_hour == valve->schedule->hour_close && time_minute == valve->schedule->minute_close)
+        {
+          valve->has_manual_override = false;
+          VALVE_Close(valve);
+        }
+      }
+    }
 
     /* USER CODE END WHILE */
 

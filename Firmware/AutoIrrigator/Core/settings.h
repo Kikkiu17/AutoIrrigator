@@ -58,9 +58,11 @@ typedef uint64_t FLASH_DATATYPE;
 static const char RADIO_POWER[] = "65";
 
 static const char ESP_NAME[] = "SNSE device";
-#define SERVER_PORT 34677
 
-static const char ESP_HOSTNAME[] = "SNSEDEVICE04"; // template: SNSEDEVICExx
+static const char ESP_HOSTNAME[] = "SNSEDEVICE89AF"; // template: SNSEDEVICExx
+static const char MQTT_BROKER_IP[] = "192.168.1.2";
+static const uint16_t MQTT_BROKER_PORT = 1883;
+static const uint16_t MQTT_PUBLISH_INTERVAL = 1000;	// ms
 
 #define AT_SHORT_TIMEOUT 250
 #define AT_MEDIUM_TIMEOUT 500
@@ -254,30 +256,18 @@ typedef struct bat
 
 extern Battery_t bat;
 
-static const char FEATURES_TEMPLATE[] =
-{
-	"sensor1$Flusso totale$%d litri/h$graph_Flusso totale (L/h)_Acqua totale (L);"
-	"sensor2$Tensione batteria$%s,%s V$graph_Batteria (V);"
-	"switch1$Ovest,status$%d,sensor$Litri/h$%d$graph_Flusso ovest (L/h)_Acqua ovest (L);"
-	"switch2$Sud,status$%d,sensor$Litri/h$%d$graph_Flusso sud (L/h)_Acqua sud (L);"
-	"switch3$Sud-Est,status$%d,sensor$Litri/h$%d$graph_Flusso sud-est (L/h)_Acqua sud-est (L);"
-	"switch4$Est,status$%d;"
-	"timepicker1$%s,button$Imposta$sendPOST ?switch=1&schedule=;"
-	"timepicker2$%s,button$Imposta$sendPOST ?switch=2&schedule=;"
-	"timepicker3$%s,button$Imposta$sendPOST ?switch=3&schedule=;"
-	"timepicker4$%s,button$Imposta$sendPOST ?switch=4&schedule=;"
-	"timestamp1$Tempo CPU$%d ms;"
-	"external1$1;"
-};
+static const char MQTT_DISCOVERY_VALVE[] = 
+"{\"name\":\"%s\",\"cmd_t\":\"snse/%s/valve%d/set\",\"stat_t\":\"snse/%s/valve%d/state\",\"pl_on\":\"1\",\"pl_off\":\"0\",\"uniq_id\":\"%s_valve%d\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"%s\"}}";
 
-static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] =
-{
-	"1$Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore"
-};
+static const char MQTT_DISCOVERY_SENSOR[] = 
+"{\"name\":\"%s\",\"stat_t\":\"snse/%s/%s/state\",\"unit_of_meas\":\"%s\",\"dev_cla\":\"%s\",\"stat_cla\":\"measurement\",\"uniq_id\":\"%s_%s\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"%s\"}}";
 
-static const char NOTIFICATION_LOW_BATTERY[] =
-{
-	"2$Batteria scarica!"
-};
+static const char MQTT_DISCOVERY_TIME[] = 
+"{\"name\":\"%s\",\"cmd_t\":\"snse/%s/valve%d/%s/set\",\"stat_t\":\"snse/%s/valve%d/%s/state\",\"uniq_id\":\"%s_valve%d_%s\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"%s\"}}";
+
+static const char OVERTEMP_TEXT[] = "Temperatura massima superata";
+
+static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] = "1$Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore";
+static const char NOTIFICATION_LOW_BATTERY[] = "2$Batteria scarica!";
 
 #endif /* SETTINGS_H_ */

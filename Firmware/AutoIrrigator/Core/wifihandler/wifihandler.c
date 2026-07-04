@@ -1,11 +1,12 @@
 /*
- * wifi.c
+ * wifihandler.c
  *
- *  Created on: Apr 12, 2025
- *      Author: Kikkiu
+ * Modified for: MQTT Client
  */
 
 #include "wifihandler.h"
+#include <stdio.h>
+#include <string.h>
 
 Notification_t notification;
 
@@ -13,203 +14,315 @@ void NOTIFICATION_Set(char* text, uint8_t size)
 {
 	notification.text = text;
 	notification.size = size;
+	
+	extern WIFI_t wifi;
+	if (text != NULL) {
+		WIFIHANDLER_MQTT_SendNotification(&wifi, text);
+	}
 }
 
-void NOTIFICATION_Reset()
+void NOTIFICATION_Reset(void)
 {
 	notification.text = NULL;
 	notification.size = 0;
+	
+	extern WIFI_t wifi;
+	WIFIHANDLER_MQTT_SendNotification(&wifi, "");
 }
 
-Response_t WIFIHANDLER_HandleNotificationRequest(Connection_t* conn, char* key_ptr)
+void WIFIHANDLER_MQTT_SendNotification(WIFI_t* wifi, const char* message)
 {
-	if (conn->request_type == GET)
+    char topic[128];
+    snprintf(topic, sizeof(topic), "snse/%s/notify", wifi->hostname);
+    WIFI_MQTT_Publish(wifi, topic, message, 1, 0);
+}
+
+static uint32_t reconnect_time = 0;
+
+Response_t WIFIHANDLER_ReconnectIfDisconnected(WIFI_t *wifi)
+{
+    Response_t status = WAITING;
+    if (HAL_GetTick() - reconnect_time > RECONNECT_CHECK_INTERVAL)
+    {
+        reconnect_time = HAL_GetTick();
+        
+        if (WIFI_MQTT_IsConnected(wifi) == OK)
+        {
+            return OK;
+        }
+        
+        status = WIFI_Connect(wifi);
+        if (status == OK)
+        {
+            if (WIFI_MQTT_IsConnected(wifi) != OK)
+            {
+                if (WIFIHANDLER_MQTT_Init(wifi, MQTT_BROKER_IP, MQTT_BROKER_PORT) == OK)
+                {
+                    WIFIHANDLER_MQTT_PublishDiscovery(wifi);
+                    extern Valve_t valve_list[VALVES_NUM];
+                    WIFIHANDLER_MQTT_PublishStates(wifi, valve_list);
+                }
+            }
+        }
+    }
+    return status;
+}
+
+Response_t WIFIHANDLER_MQTT_Init(WIFI_t* wifi, const char* broker_ip, uint16_t port)
+{
+	if (WIFI_MQTT_IsConnected(wifi) != OK)
 	{
-		if (notification.size == 0 || notification.text == NULL)
-			return WIFI_SendResponse(conn, "200 OK", "Vuoto", 5);
-		else
-			return WIFI_SendResponse(conn, "200 OK", notification.text, notification.size);
+		if (WIFI_MQTT_Config(wifi, wifi->hostname) != OK) return ERR;
+		if (WIFI_MQTT_ConnectBroker(wifi, broker_ip, port) != OK) return ERR;
+	}
+	
+	char sub_topic[128];
+	
+	// Subscribe to wildcard valve command topics: snse/<hostname>/+/set
+	snprintf(sub_topic, sizeof(sub_topic), "snse/%s/+/set", wifi->hostname);
+	WIFI_MQTT_Subscribe(wifi, sub_topic, 1);
+	
+	// Subscribe to wildcard valve schedule topics: snse/<hostname>/+/+/set
+	snprintf(sub_topic, sizeof(sub_topic), "snse/%s/+/+/set", wifi->hostname);
+	WIFI_MQTT_Subscribe(wifi, sub_topic, 1);
+
+	return OK;
+}
+
+void WIFIHANDLER_MQTT_PublishDiscovery(WIFI_t* wifi)
+{
+	char topic[128];
+	char payload[WIFI_BUF_MAX_SIZE];
+
+	// Valve switches
+	const char* valve_names[VALVES_NUM] = {
+		"West Valve",
+		"South Valve",
+		"South-East Valve",
+		"East Valve"
+	};
+
+	for (int i = 0; i < VALVES_NUM; i++)
+	{
+		snprintf(topic, sizeof(topic), "homeassistant/switch/%s_valve%d/config", wifi->hostname, i + 1);
+		snprintf(payload, sizeof(payload), MQTT_DISCOVERY_VALVE,
+				 valve_names[i], wifi->hostname, i + 1, wifi->hostname, i + 1,
+				 wifi->hostname, i + 1, wifi->hostname, wifi->name);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
 	}
 
-	return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
+	// Flow sensors 1, 2, 3
+	const char* flow_names[3] = {
+		"West Flow",
+		"South Flow",
+		"South-East Flow"
+	};
+	const char* flow_topics[3] = {
+		"flow1",
+		"flow2",
+		"flow3"
+	};
+
+	// Flow sensors 1, 2, 3
+    for (int i = 0; i < 3; i++)
+    {
+        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_%s/config", wifi->hostname, flow_topics[i]);
+        snprintf(payload, sizeof(payload), MQTT_DISCOVERY_SENSOR,
+                 flow_names[i], wifi->hostname, flow_topics[i], "L/h",
+                 "volume_flow_rate", flow_topics[i], wifi->hostname, wifi->hostname, wifi->name); // Added wifi->hostname
+        WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+    }
+
+    // Total Flow sensor
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_total_flow/config", wifi->hostname);
+    snprintf(payload, sizeof(payload), MQTT_DISCOVERY_SENSOR,
+             "Total Flow", wifi->hostname, "total_flow", "L/h",
+             "volume_flow_rate", "total_flow", wifi->hostname, wifi->hostname, wifi->name); // Added wifi->hostname
+    WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+
+    // Battery sensor
+    snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_battery/config", wifi->hostname);
+    snprintf(payload, sizeof(payload), MQTT_DISCOVERY_SENSOR,
+             "Battery Voltage", wifi->hostname, "battery", "V",
+             "voltage", "battery", wifi->hostname, wifi->hostname, wifi->name); // Added wifi->hostname
+    WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+
+	// Time Pickers (Schedules 1-4)
+	for (int i = 0; i < VALVES_NUM; i++)
+	{
+		char time_name[64];
+		
+		// Start Time
+		snprintf(topic, sizeof(topic), "homeassistant/time/%s_valve%d_start/config", wifi->hostname, i + 1);
+		snprintf(time_name, sizeof(time_name), "%s Start Time", valve_names[i]);
+		snprintf(payload, sizeof(payload), MQTT_DISCOVERY_TIME,
+				 time_name, wifi->hostname, i + 1, "start", wifi->hostname, i + 1, "start",
+				 wifi->hostname, i + 1, "start", wifi->hostname, wifi->name);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+		
+		// End Time
+		snprintf(topic, sizeof(topic), "homeassistant/time/%s_valve%d_end/config", wifi->hostname, i + 1);
+		snprintf(time_name, sizeof(time_name), "%s End Time", valve_names[i]);
+		snprintf(payload, sizeof(payload), MQTT_DISCOVERY_TIME,
+				 time_name, wifi->hostname, i + 1, "end", wifi->hostname, i + 1, "end",
+				 wifi->hostname, i + 1, "end", wifi->hostname, wifi->name);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+	}
 }
 
-Response_t WIFIHANDLER_HandleWiFiRequest(Connection_t* conn, char* command_ptr)
+void WIFIHANDLER_MQTT_PublishStates(WIFI_t* wifi, Valve_t* valve_list)
 {
-	if (conn->request_type == POST)
+	char topic[128];
+	char payload[64];
+
+	// Valve switch states (valve 1 to 4)
+	for (int i = 0; i < VALVES_NUM; i++)
 	{
-		if (WIFI_RequestKeyHasValue(conn, command_ptr, "changename"))
+		snprintf(topic, sizeof(topic), "snse/%s/valve%d/state", wifi->hostname, i + 1);
+		snprintf(payload, sizeof(payload), "%d", valve_list[i].isOpen);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+	}
+
+	// Flow sensor states 1, 2, 3
+	const char* flow_topics[3] = {
+		"flow1",
+		"flow2",
+		"flow3"
+	};
+	for (int i = 0; i < 3; i++)
+	{
+		snprintf(topic, sizeof(topic), "snse/%s/%s/state", wifi->hostname, flow_topics[i]);
+		snprintf(payload, sizeof(payload), "%lu", (unsigned long)valve_list[i].flow->lt_per_hour);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+	}
+
+	// Total Flow sensor state
+	snprintf(topic, sizeof(topic), "snse/%s/total_flow/state", wifi->hostname);
+	snprintf(payload, sizeof(payload), "%lu", (unsigned long)valve_list[3].flow->lt_per_hour);
+	WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+
+	// Battery sensor state
+	snprintf(topic, sizeof(topic), "snse/%s/battery/state", wifi->hostname);
+	snprintf(payload, sizeof(payload), "%d.%02d", bat.voltage_integer, bat.voltage_decimal);
+	WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+
+	// Schedules 1-4 states (Start and End times)
+	for (int i = 0; i < VALVES_NUM; i++)
+	{
+		snprintf(topic, sizeof(topic), "snse/%s/valve%d/start/state", wifi->hostname, i + 1);
+		snprintf(payload, sizeof(payload), "%02d:%02d", valve_list[i].schedule->hour_open, valve_list[i].schedule->minute_open);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+		
+		snprintf(topic, sizeof(topic), "snse/%s/valve%d/end/state", wifi->hostname, i + 1);
+		snprintf(payload, sizeof(payload), "%02d:%02d", valve_list[i].schedule->hour_close, valve_list[i].schedule->minute_close);
+		WIFI_MQTT_Publish(wifi, topic, payload, 1, 1);
+	}
+}
+
+void WIFIHANDLER_MQTT_Loop(WIFI_t* wifi, Valve_t* valve_list)
+{
+	char topic_in[128];
+	char payload_in[64];
+
+	if (WIFI_MQTT_Receive(wifi, topic_in, payload_in, 1) == OK)
+	{
+		char expected_topic[128];
+		
+		// Check for valve command topics
+		for (int i = 1; i <= VALVES_NUM; i++)
 		{
-			char* name_ptr = WIFI_RequestHasKey(conn, "name");
-			if (name_ptr == NULL)
-				return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
-			else
+			snprintf(expected_topic, sizeof(expected_topic), "snse/%s/valve%d/set", wifi->hostname, i);
+			if (strcmp(topic_in, expected_topic) == 0)
 			{
-				uint32_t name_size = 0;
-				name_ptr = WIFI_GetKeyValue(conn, name_ptr, &name_size);
-				if (name_ptr == NULL)
-					return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
-				else
+				Valve_t* valve = &valve_list[i - 1];
+				if (strcmp(payload_in, "1") == 0)
 				{
-					WIFI_SetName(conn->wifi, name_ptr);
-					FLASH_WriteSaveData();	// save name
-					return WIFI_SendResponse(conn, "200 OK", "", 0);
+					VALVE_Open(valve);
+					valve->has_manual_override = true;
 				}
+				else if (strcmp(payload_in, "0") == 0)
+				{
+					VALVE_Close(valve);
+					valve->has_manual_override = false;
+				}
+				
+				// Publish state immediately
+				char state_topic[128];
+				char state_payload[16];
+				snprintf(state_topic, sizeof(state_topic), "snse/%s/valve%d/state", wifi->hostname, i);
+				snprintf(state_payload, sizeof(state_payload), "%d", valve->isOpen);
+				WIFI_MQTT_Publish(wifi, state_topic, state_payload, 1, 1);
+				break;
 			}
+		}
 
-		}
-		else return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
-	}
-	else if (conn->request_type == GET)
-	{
-		if (WIFI_RequestKeyHasValue(conn, command_ptr, "SSID"))
+		// Check for schedule set topics
+		for (int i = 1; i <= VALVES_NUM; i++)
 		{
-			return WIFI_SendResponse(conn, "200 OK", conn->wifi->SSID, strlen(conn->wifi->SSID));
-		}
-		else if (WIFI_RequestKeyHasValue(conn, command_ptr, "IP"))
-		{
-			return WIFI_SendResponse(conn, "200 OK", conn->wifi->IP, strlen(conn->wifi->IP));
-		}
-		else if (WIFI_RequestKeyHasValue(conn, command_ptr, "ID"))
-		{
-			return WIFI_SendResponse(conn, "200 OK", conn->wifi->hostname, strlen(conn->wifi->hostname));
-		}
-		else if (WIFI_RequestKeyHasValue(conn, command_ptr, "name"))
-		{
-			return WIFI_SendResponse(conn, "200 OK", conn->wifi->name, strlen(conn->wifi->name));
-		}
-		else if (WIFI_RequestKeyHasValue(conn, command_ptr, "buf"))
-		{
-			// this is possible if RESPONSE_MAX_SIZE is at least as big as WIFI_BUF_MAX_SIZE
-			if (RESPONSE_MAX_SIZE < WIFI_BUF_MAX_SIZE)
+			// Start Time Set
+			snprintf(expected_topic, sizeof(expected_topic), "snse/%s/valve%d/start/set", wifi->hostname, i);
+			if (strcmp(topic_in, expected_topic) == 0)
 			{
-				return WIFI_SendResponse(conn, "500 Internal server error", "", 0);
+				if (strlen(payload_in) >= 5)
+				{
+					int32_t hour = bufferToInt(payload_in, 2);
+					int32_t minute = bufferToInt(payload_in + 3, 2);
+					if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59)
+					{
+						valve_list[i - 1].schedule->hour_open = hour;
+						valve_list[i - 1].schedule->minute_open = minute;
+						
+						// Rebuild text schedule
+						snprintf(valve_list[i - 1].schedule->text, sizeof(valve_list[i - 1].schedule->text),
+								 "%02d:%02d-%02d:%02d",
+								 valve_list[i - 1].schedule->hour_open, valve_list[i - 1].schedule->minute_open,
+								 valve_list[i - 1].schedule->hour_close, valve_list[i - 1].schedule->minute_close);
+						
+						SCHEDULE_Save(valve_list, VALVES_NUM);
+						
+						// Publish state immediately
+						char state_topic[128];
+						char state_payload[16];
+						snprintf(state_topic, sizeof(state_topic), "snse/%s/valve%d/start/state", wifi->hostname, i);
+						snprintf(state_payload, sizeof(state_payload), "%02d:%02d", hour, minute);
+						WIFI_MQTT_Publish(wifi, state_topic, state_payload, 1, 1);
+					}
+				}
+				break;
 			}
-			else
-				return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, sizeof(conn->wifi->buf));
+			
+			// End Time Set
+			snprintf(expected_topic, sizeof(expected_topic), "snse/%s/valve%d/end/set", wifi->hostname, i);
+			if (strcmp(topic_in, expected_topic) == 0)
+			{
+				if (strlen(payload_in) >= 5)
+				{
+					int32_t hour = bufferToInt(payload_in, 2);
+					int32_t minute = bufferToInt(payload_in + 3, 2);
+					if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59)
+					{
+						valve_list[i - 1].schedule->hour_close = hour;
+						valve_list[i - 1].schedule->minute_close = minute;
+						
+						// Rebuild text schedule
+						snprintf(valve_list[i - 1].schedule->text, sizeof(valve_list[i - 1].schedule->text),
+								 "%02d:%02d-%02d:%02d",
+								 valve_list[i - 1].schedule->hour_open, valve_list[i - 1].schedule->minute_open,
+								 valve_list[i - 1].schedule->hour_close, valve_list[i - 1].schedule->minute_close);
+						
+						SCHEDULE_Save(valve_list, VALVES_NUM);
+						
+						// Publish state immediately
+						char state_topic[128];
+						char state_payload[16];
+						snprintf(state_topic, sizeof(state_topic), "snse/%s/valve%d/end/state", wifi->hostname, i);
+						snprintf(state_payload, sizeof(state_payload), "%02d:%02d", hour, minute);
+						WIFI_MQTT_Publish(wifi, state_topic, state_payload, 1, 1);
+					}
+				}
+				break;
+			}
 		}
-		else if (WIFI_RequestKeyHasValue(conn, command_ptr, "conn"))
-		{
-			sprintf(conn->wifi->buf, "Connection ID: %d\nrequest size: %" PRIu32
-					"\nrequest: %s", conn->connection_number, conn->request_size, conn->request);
-			return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, strlen(conn->wifi->buf));
-		}
-		else return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
+		ESP8266_ClearBuffer();
 	}
-
-	return ERR;
-}
-
-Response_t WIFIHANDLER_HandleFeaturePacket(Connection_t* conn, Valve_t* valve_list, uint32_t list_size, char* features_template)
-{
-	memset(conn->wifi->buf, 0, WIFI_BUF_MAX_SIZE);
-	char bat_dec[3] = {0};
-	char bat_int[3] = {0};
-	intToBuffer(bat_dec, bat.voltage_decimal, 2);
-	intToBuffer(bat_int, bat.voltage_integer, 2);
-	sprintf(conn->wifi->buf, features_template,
-			valve_list[3].flow->lt_per_hour,	// il flussimetro generale è associato alla valvola 4
-			bat_int, bat_dec,
-			valve_list[0].isOpen, valve_list[0].flow->lt_per_hour,
-			valve_list[1].isOpen, valve_list[1].flow->lt_per_hour,
-			valve_list[2].isOpen, valve_list[2].flow->lt_per_hour,
-			valve_list[3].isOpen,
-			valve_list[0].schedule->text,
-			valve_list[1].schedule->text,
-			valve_list[2].schedule->text,
-			valve_list[3].schedule->text,
-			uwTick);
-	return WIFI_SendResponse(conn, "200 OK", conn->wifi->buf, strlen(conn->wifi->buf));
-}
-
-Response_t WIFIHANDLER_HandleWeatherRequest(Weather_t* wx, Connection_t* conn, char* key_ptr)
-{
-	char* wbuf = conn->wifi->buf;
-
-	if (!wx->last_update_status)
-	{
-		wx->last_update_status = WEATHER_GetForecast(wx, ESP8266_GetBuffer());
-		if (!wx->last_update_status)
-			return WIFI_SendResponse(conn, "500 Internal Server Error", "", 0);
-	}
-
-	if (WIFI_RequestKeyHasValue(conn, key_ptr, "lowprob"))
-	{
-		int8_t hour = WEATHER_GetLowProbPrecipitation(wx, 0);
-		if (hour == -1)
-			return WIFI_SendResponse(conn, "200 OK", "", 0);
-		else
-		{
-			memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
-			sprintf(wbuf, "La prima ora in cui ci sara' probabilita' di pioggia maggiore"
-					" del 30%% saranno le %d", hour);
-			return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
-		}
-	}
-	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "prob"))
-	{
-		int8_t hour = WEATHER_GetProbablePrecipitation(wx, 0);
-		if (hour == -1)
-			return WIFI_SendResponse(conn, "200 OK", "", 0);
-		else
-		{
-			memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
-			sprintf(wbuf, "La prima ora in cui ci sara' probabilita' di pioggia maggiore"
-					" del 40%% saranno le %d", hour);
-			return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
-		}
-	}
-	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "now"))
-	{
-		if (wx->current_precipitation == 0)
-			return WIFI_SendResponse(conn, "200 OK", "Non sta piovendo", 16);
-		else
-		{
-			memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
-			sprintf(wbuf, "Ci sono %" PRIu32 " mm di precipitazioni", wx->current_precipitation);
-			return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
-		}
-	}
-	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "precipitation"))
-	{
-		memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
-		sprintf(wbuf, "Precipitazioni di oggi per ogni ora: ");
-		char prec[24];
-		for (uint8_t i = 0; i < 24; i++)
-		{
-			uint32_t int_prec = wx->hourly_precipitation[i] / 1000;
-			uint32_t dec_prec = wx->hourly_precipitation[i] - int_prec * 1000;
-			if (dec_prec > 99)
-				dec_prec /= 10;
-			sprintf(prec, "%" PRIu32 ".%" PRIu32, int_prec, dec_prec);
-			strcat(wbuf, prec);
-			if (i != 23)
-				strcat(wbuf, ",");
-		}
-
-		return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
-	}
-	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "hourprob"))
-	{
-		memset(wbuf, 0, WIFI_BUF_MAX_SIZE);
-		sprintf(wbuf, "Probabilita' di precipitazioni per ogni ora di oggi: ");
-		char prob[24];
-		for (uint8_t i = 0; i < 24; i++)
-		{
-			sprintf(prob, "%d", wx->hourly_precipitation_prob[i]);
-			strcat(wbuf, prob);
-			if (i != 23)
-				strcat(wbuf, ",");
-		}
-
-		return WIFI_SendResponse(conn, "200 OK", wbuf, strlen(wbuf));
-	}
-	else if (WIFI_RequestKeyHasValue(conn, key_ptr, "updatetime"))
-	{
-		return WIFI_SendResponse(conn, "200 OK", wx->forecast_time, sizeof(wx->forecast_time));
-	}
-
-	return WIFI_SendResponse(conn, "400 Bad Request", "", 0);
-
-	return ERR;
 }
