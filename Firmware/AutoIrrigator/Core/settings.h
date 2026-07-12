@@ -267,7 +267,7 @@ static const char MQTT_DISCOVERY_TIME[] =
 
 static const char OVERTEMP_TEXT[] = "Temperatura massima superata";
 
-static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] = "1$Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore";
-static const char NOTIFICATION_LOW_BATTERY[] = "2$Batteria scarica!";
+static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] = "Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore";
+static const char NOTIFICATION_LOW_BATTERY[] = "Batteria scarica!";
 
 #endif /* SETTINGS_H_ */

@@ -236,7 +236,7 @@ int main(void)
         yesterday_last_precipitation_hour = WEATHER_GetTodayLastPrecipitation(&weather);
 
       // --------- CLOSE VALVES WHEN BATTERY IS LOW AND SKIP EVERYTHING ---------
-      if ((bat.voltage_integer == 11 && bat.voltage_decimal <= 50) || bat.voltage_integer < 11)
+      if ((bat.voltage_integer == 10 && bat.voltage_decimal <= 40) || bat.voltage_integer < 10)
       {
         if (!low_bat_notification)
         {
@@ -269,7 +269,10 @@ int main(void)
         keep_valves_closed = true;
 
       if (keep_valves_closed && !valves_closed_notification)
+      {
+        valves_closed_notification = true;
         WIFIHANDLER_MQTT_SendNotification(&wifi, NOTIFICATION_WEATHER_NO_VALVE_OPEN);
+      }
       else
         valves_closed_notification = false;
 
