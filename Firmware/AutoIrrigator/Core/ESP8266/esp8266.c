@@ -33,9 +33,6 @@
 volatile char uart_buffer[UART_BUFFER_SIZE + 1];
 bool WIFI_response_sent = false;
 
-static char mqtt_rx_backup[256] = {0};
-static volatile bool mqtt_backup_filled = false;
-
 void WIFI_Init(WIFI_t* wifi)
 {
 	if (wifi == NULL)
@@ -59,9 +56,6 @@ int32_t bufferToInt(char* buf, uint32_t size)
 Response_t ESP8266_WaitForStringCNDTROffset(char* str, int32_t offset, uint32_t timeout)
 {
 	if (str == NULL) return NULVAL;
-	uint32_t str_len = strlen(str);
-	if (str_len == 0) return OK;
-
 	for (uint32_t i = 0; i < timeout; i++)
 	{
 		HAL_Delay(1);
@@ -72,31 +66,12 @@ Response_t ESP8266_WaitForStringCNDTROffset(char* str, int32_t offset, uint32_t 
 			return ERR;
 		}
 
-		int32_t write_idx = UART_BUFFER_SIZE - UART_DMA_CHANNEL_HANDLE->CNDTR;
-		int32_t search_limit = (offset < 0 ? -offset : offset);
+		if (UART_BUFFER_SIZE - UART_DMA_CHANNEL_HANDLE->CNDTR > (offset < 0 ? -offset : offset))
+			if (strstr((char*)uart_buffer + (UART_BUFFER_SIZE - UART_DMA_CHANNEL_HANDLE->CNDTR) + offset, str) == NULL)
+				continue;
 
-		if (write_idx >= search_limit)
-		{
-			bool found = false;
-			for (int32_t idx = write_idx + offset; idx >= 0; idx--)
-			{
-				// Stop searching backwards if we encounter a null terminator (gibberish region)
-				if (uart_buffer[idx] == '\0')
-					break;
-
-				if (strncmp((char*)uart_buffer + idx, str, str_len) == 0)
-				{
-					found = true;
-					break;
-				}
-			}
-
-			if (found)
-			{
-				ESP8266_ClearBuffer();
-				return OK;
-			}
-		}
+		ESP8266_ClearBuffer();
+		return OK;
 	}
 
 	if (strstr((char*)uart_buffer, "ERROR")) return ERR;
@@ -201,22 +176,8 @@ Response_t ESP8266_Init(void)
 
 void ESP8266_ClearBuffer(void)
 {
-	char* ptr = strstr((char*)uart_buffer, "+MQTTSUBRECV:");
-	if (ptr != NULL && !mqtt_backup_filled)
-	{
-		int32_t write_idx = UART_BUFFER_SIZE - UART_DMA_CHANNEL_HANDLE->CNDTR;
-		int32_t offset = ptr - (char*)uart_buffer;
-		int32_t copy_len = write_idx - offset;
-		if (copy_len > 0 && copy_len < (int32_t)sizeof(mqtt_rx_backup))
-		{
-			memcpy(mqtt_rx_backup, ptr, copy_len);
-			mqtt_rx_backup[copy_len] = '\0';
-			mqtt_backup_filled = true;
-		}
-	}
-
 	LL_DMA_DisableChannel(UART_DMA_TYPEDEF, UART_DMA_LL_CHANNEL);
-	memset((char*)uart_buffer, 0, UART_BUFFER_SIZE + 1 - UART_DMA_CHANNEL_HANDLE->CNDTR);
+	memset((char*)uart_buffer, 0, sizeof(uart_buffer));
 	UART_DMA_CHANNEL_HANDLE->CNDTR = UART_BUFFER_SIZE;
 	__HAL_UART_CLEAR_OREFLAG(&STM_UART);
     __HAL_UART_CLEAR_NEFLAG(&STM_UART);
@@ -280,7 +241,7 @@ Response_t ESP8266_Restore(void)
 Response_t WIFI_GetIP(WIFI_t* wifi)
 {
 	ESP8266_ClearBuffer();
-	Response_t atstatus = ESP8266_SendATCommandKeepString("AT+CIFSR\r\n", 10, AT_MEDIUM_TIMEOUT);
+	Response_t atstatus = ESP8266_SendATCommandKeepString("AT+CIFSR\r\n", 10, AT_SHORT_TIMEOUT);
 	if (atstatus != OK) return atstatus;
 
 	char* ptr = strstr((char*)uart_buffer, "\"");
@@ -304,7 +265,7 @@ Response_t WIFI_GetIP(WIFI_t* wifi)
 Response_t WIFI_GetConnectionInfo(WIFI_t* wifi)
 {
 	if (wifi == NULL) return NULVAL;
-	if (ESP8266_SendATCommandKeepString("AT+CWSTATE?\r\n", 13, AT_MEDIUM_TIMEOUT) != OK)
+	if (ESP8266_SendATCommandKeepString("AT+CWSTATE?\r\n", 13, AT_SHORT_TIMEOUT) != OK)
 		return ERR;
 	
 	char* ptr = strstr((char*)uart_buffer, "+CWSTATE:");
@@ -435,7 +396,7 @@ Response_t WIFI_SetHostname(WIFI_t* wifi, const char* hostname)
 Response_t WIFI_GetHostname(WIFI_t* wifi)
 {
 	if (wifi == NULL) return NULVAL;
-	Response_t atstatus = ESP8266_SendATCommandKeepString("AT+CWHOSTNAME?\r\n", 16, AT_MEDIUM_TIMEOUT);
+	Response_t atstatus = ESP8266_SendATCommandKeepString("AT+CWHOSTNAME?\r\n", 16, AT_SHORT_TIMEOUT);
 	if (atstatus != OK) return atstatus;
 
 	char* ptr = strstr((char*)uart_buffer, "+CWHOSTNAME:");
@@ -463,11 +424,17 @@ Response_t WIFI_SetName(WIFI_t* wifi, char* name)
 	if (name == NULL) return NULVAL;
 	if (name[0] < 32 || name[0] > 126) return ERR;
 
-	uint32_t name_size = strnlen(name, NAME_MAX_SIZE);
+	uint32_t name_size;
+	if (sizeof(name) <= NAME_MAX_SIZE)
+		name_size = strlen(name);
+	else
+		name_size = strnlen(name, NAME_MAX_SIZE);
 
+#ifdef ENABLE_SAVE_TO_FLASH
 	if (name_size != NAME_MAX_SIZE)
 		memset(savedata.name + name_size, 0, NAME_MAX_SIZE - name_size);
 	strncpy(savedata.name, name, name_size);
+#endif
 
 	if (name_size != NAME_MAX_SIZE)
 		memset(wifi->name + name_size, 0, NAME_MAX_SIZE - name_size);
@@ -541,7 +508,9 @@ Response_t WIFI_GetTime(WIFI_t* wifi)
         uint8_t utc_m = (uint8_t)bufferToInt(colon + 1, 2);
         uint8_t utc_s = (uint8_t)bufferToInt(colon + 4, 2);
         
-        uint8_t day   = (uint8_t)bufferToInt(colon - 5, 2);
+        uint8_t day   = (colon[-5] >= '0' && colon[-5] <= '9') ? 
+                        (uint8_t)((colon[-5] - '0') * 10 + (colon[-4] - '0')) : 
+                        (uint8_t)(colon[-4] - '0');
         uint8_t month = getMonth(colon - 9);
         uint16_t year = bufferToInt(colon + 7, 4);
 
@@ -623,9 +592,15 @@ Response_t WIFI_MQTT_ConnectBroker(WIFI_t* wifi, const char* broker_ip, uint16_t
 	
 	memset(wifi->buf, 0, WIFI_BUF_MAX_SIZE);
 	// AT+MQTTCONN=<LinkID>,<"host">,<port>,<reconnect>
-	snprintf(wifi->buf, WIFI_BUF_MAX_SIZE, "AT+MQTTCONN=0,\"%s\",%d,1\r\n", broker_ip, port);
+	snprintf(wifi->buf, WIFI_BUF_MAX_SIZE, "AT+MQTTCONN=0,\"%s\",%d,0\r\n", broker_ip, port);
 	
 	return ESP8266_SendATCommandResponse(wifi->buf, strlen(wifi->buf), 10000); 
+}
+
+Response_t WIFI_MQTT_Clean(WIFI_t* wifi)
+{
+	if (wifi == NULL) return NULVAL;
+	return ESP8266_SendATCommandResponse("AT+MQTTCLEAN=0\r\n", 16, AT_SHORT_TIMEOUT);
 }
 
 Response_t WIFI_MQTT_Subscribe(WIFI_t* wifi, const char* topic, uint8_t qos)
@@ -636,7 +611,7 @@ Response_t WIFI_MQTT_Subscribe(WIFI_t* wifi, const char* topic, uint8_t qos)
 	// AT+MQTTSUB=<LinkID>,<"topic">,<qos>
 	snprintf(wifi->buf, WIFI_BUF_MAX_SIZE, "AT+MQTTSUB=0,\"%s\",%d\r\n", topic, qos);
 	
-	return ESP8266_SendATCommandResponse(wifi->buf, strlen(wifi->buf), AT_SHORT_TIMEOUT);
+	return ESP8266_SendATCommandResponse(wifi->buf, strlen(wifi->buf), AT_LONG_TIMEOUT);
 }
 
 Response_t WIFI_MQTT_Publish(WIFI_t* wifi, const char* topic, const char* payload, uint8_t qos, uint8_t retain)
@@ -669,82 +644,78 @@ Response_t WIFI_MQTT_Receive(WIFI_t* wifi, char* topic_out, char* payload_out, u
 {
 	if (wifi == NULL || topic_out == NULL || payload_out == NULL) return NULVAL;
 
-	char* ptr = NULL;
-	uint32_t start_time = uwTick;
-	bool using_backup = false;
-	
-	if (mqtt_backup_filled)
+	char* ptr = (char*)strstr((const char*)uart_buffer, "+MQTTSUBRECV:");
+	if (ptr == NULL)
 	{
-		ptr = strstr(mqtt_rx_backup, "+MQTTSUBRECV:");
-		if (ptr != NULL)
-		{
-			using_backup = true;
-		}
-	}
-	
-	if (!using_backup)
-	{
+		if (timeout == 0) return TIMEOUT;
+		uint32_t start_time = uwTick;
 		while (1)
 		{
-			if (uwTick - start_time > timeout) return TIMEOUT;
-			if ((ptr = strstr((char*)uart_buffer, "+MQTTSUBRECV:")) != NULL) break;
+			HAL_Delay(1);
+			ptr = (char*)strstr((const char*)uart_buffer, "+MQTTSUBRECV:");
+			if (ptr != NULL) break;
+			if (uwTick - start_time >= timeout) return TIMEOUT;
 		}
 	}
 
-	char* topic_start = strstr(ptr, "\"");
-	if (!topic_start) {
-		if (using_backup) mqtt_backup_filled = false;
-		return ERR;
-	}
-	topic_start++; 
-	
-	char* topic_end = strstr(topic_start, "\"");
-	if (!topic_end) {
-		if (using_backup) mqtt_backup_filled = false;
-		return ERR;
-	}
-	
-	uint32_t topic_len = topic_end - topic_start;
-	strncpy(topic_out, topic_start, topic_len);
-	topic_out[topic_len] = '\0';
-	
-	char* len_start = topic_end + 2; 
-	char* len_end = strstr(len_start, ",");
-	if (!len_end) {
-		if (using_backup) mqtt_backup_filled = false;
-		return ERR;
-	}
-	
-	uint32_t payload_len = bufferToInt(len_start, len_end - len_start);
-	
-	char* payload_start = len_end + 1;
-	
-	if (!using_backup)
+	uint32_t start_time = uwTick;
+	char* topic_start = NULL;
+	char* topic_end = NULL;
+	char* len_start = NULL;
+	char* len_end = NULL;
+	char* payload_start = NULL;
+	uint32_t payload_len = 0;
+
+	while (uwTick - start_time < 200)
 	{
-		int32_t payload_start_idx = payload_start - (char*)uart_buffer;
-		start_time = uwTick;
-		while (1)
+		if (topic_start == NULL)
 		{
-			int32_t write_idx = UART_BUFFER_SIZE - UART_DMA_CHANNEL_HANDLE->CNDTR;
-			int32_t bytes_received = write_idx - payload_start_idx;
-			if (bytes_received >= (int32_t)payload_len) break;
-			if (uwTick - start_time > timeout) return TIMEOUT;
+			char* q1 = strstr(ptr, "\"");
+			if (q1 != NULL)
+				topic_start = q1 + 1;
+		}
+
+		if (topic_start != NULL && topic_end == NULL)
+		{
+			topic_end = strstr(topic_start, "\"");
+		}
+
+		if (topic_end != NULL && len_end == NULL)
+		{
+			char* comma1 = strstr(topic_end, ",");
+			if (comma1 != NULL)
+			{
+				len_start = comma1 + 1;
+				len_end = strstr(len_start, ",");
+				if (len_end != NULL)
+				{
+					payload_len = bufferToInt(len_start, len_end - len_start);
+					payload_start = len_end + 1;
+				}
+			}
+		}
+
+		if (payload_start != NULL)
+		{
+			uint32_t rx_count = UART_BUFFER_SIZE - UART_DMA_CHANNEL_HANDLE->CNDTR;
+			uint32_t payload_offset = (uint32_t)(payload_start - (char*)uart_buffer);
+			if (rx_count >= payload_offset + payload_len || strlen(payload_start) >= payload_len)
+			{
+				uint32_t topic_len = topic_end - topic_start;
+				strncpy(topic_out, topic_start, topic_len);
+				topic_out[topic_len] = '\0';
+
+				strncpy(payload_out, payload_start, payload_len);
+				payload_out[payload_len] = '\0';
+
+				ESP8266_ClearBuffer();
+				return OK;
+			}
 		}
 	}
-	
-	strncpy(payload_out, payload_start, payload_len);
-	payload_out[payload_len] = '\0';
-	
-	if (using_backup)
-	{
-		mqtt_backup_filled = false;
-		memset(mqtt_rx_backup, 0, sizeof(mqtt_rx_backup));
-	}
-	else
-	{
-		ESP8266_ClearBuffer();
-	}
-	return OK;
+
+	ESP8266_ClearBuffer();
+	return TIMEOUT;
 }
 
 Response_t WIFI_MQTT_IsConnected(WIFI_t* wifi)
@@ -752,11 +723,16 @@ Response_t WIFI_MQTT_IsConnected(WIFI_t* wifi)
 	if (wifi == NULL) return NULVAL;
 	
 	ESP8266_ClearBuffer();
-	Response_t result = ESP8266_SendATCommandKeepString("AT+MQTTCONN?\r\n", 15, 5000);
+	Response_t result = ESP8266_SendATCommandKeepString("AT+MQTTCONN?\r\n", 14, 5000);
 	if (result != OK) return result;
 
-	if (strstr((char*)uart_buffer, "+MQTTCONN:0,1") != NULL)
-		return OK;
+	char* ptr = strstr((char*)uart_buffer, "+MQTTCONN:0,");
+	if (ptr != NULL)
+	{
+		char state = *(ptr + 12);
+		if (state == '4' || state == '5' || state == '6')
+			return OK;
+	}
 	
 	return FAIL;
 }

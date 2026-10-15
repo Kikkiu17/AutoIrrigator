@@ -77,10 +77,8 @@ void Error_Handler(void);
 #define FLOW4_GPIO_Port GPIOA
 #define FLOW3_Pin GPIO_PIN_7
 #define FLOW3_GPIO_Port GPIOA
-#define FLOW2_Pin GPIO_PIN_8
-#define FLOW2_GPIO_Port GPIOA
-#define FLOW5_Pin GPIO_PIN_11
-#define FLOW5_GPIO_Port GPIOA
+#define FLOW2_Pin GPIO_PIN_1
+#define FLOW2_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

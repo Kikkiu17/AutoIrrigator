@@ -1,5 +1,5 @@
 /*
- * features.h
+ * settings.h
  *
  *  Created on: Aug 6, 2025
  *      Author: kikkiu
@@ -10,6 +10,7 @@
 
 #include <inttypes.h>
 #include "stm32g0xx.h"
+#include "main.h"
 
 typedef uint8_t bool;
 #define true 1
@@ -33,6 +34,17 @@ typedef uint8_t bool;
 // ==========================================================================================
 // 										USER DEFINES
 // ==========================================================================================
+#define MAX_SENSORS 10
+#define MAX_SWITCHES 10
+#define MAX_COVERS 2
+#define MAX_LIGHTS 2
+#define MAX_SERVOS 2
+
+#define ENABLE_SERVO
+#define SERVO_DEFAULT_MIN_ANGLE 0
+#define SERVO_DEFAULT_MAX_ANGLE 180
+
+#define OVERTEMP_THRESHOLD 85	// °C
 
 // ==========================================================================================
 // 											FLASH
@@ -47,90 +59,57 @@ typedef uint8_t bool;
 // check your datasheet for the permitted datatype! STM32G030 can write DWORD on FLASH
 typedef uint64_t FLASH_DATATYPE;
 #define FLASH_DATASIZE sizeof(FLASH_DATATYPE)
-#define LAST_PAGE_ADDRESS 0x08000000 + ((FLASH_PAGE_NB - 1) * FLASH_PAGE_SIZE)
-//#define LAST_PAGE_ADDRESS 0x08000000 + FLASH_BANK_SIZE - FLASH_PAGE_SIZE
-//#define LAST_PAGE_ADDRESS 0x8007800	// check your datasheet!!!
+#define LAST_PAGE_ADDRESS (0x08000000 + ((FLASH_PAGE_NB - 1) * FLASH_PAGE_SIZE))
 #endif
 
 // ==========================================================================================
 // 									NETWORK (esp8266.h)
 // ==========================================================================================
 static const char RADIO_POWER[] = "65";
-
 static const char ESP_NAME[] = "SNSE device";
+static const char ESP_HOSTNAME[] = "SNSEDEVICE89AF"; // template: SNSEDEVICExxxx
 
-static const char ESP_HOSTNAME[] = "SNSEDEVICE89AF"; // template: SNSEDEVICExx
-static const char MQTT_BROKER_IP[] = "192.168.1.2";
-static const uint16_t MQTT_BROKER_PORT = 1883;
-static const uint16_t MQTT_PUBLISH_INTERVAL = 1000;	// ms
+// MQTT Broker configurations
+#define MQTT_BROKER_IP          "192.168.1.2"
+#define MQTT_BROKER_PORT        1883
+#define MQTT_PUBLISH_INTERVAL   1000 // in ms
 
+// AT command timeout configurations
 #define AT_SHORT_TIMEOUT 250
 #define AT_MEDIUM_TIMEOUT 500
 #define AT_LONG_TIMEOUT 1250
 
-// BUFFERS SIZES (in RAM)
-
-/**
- * RESPONSE_MAX_SIZE
- *
- * this buffer will contain the data to be sent FROM THIS device to the connected device
- * this could correspond to sizeof(FEATURES_TEMPLATE), because it's usually the biggest response
- * this device will send. set this according to your needs
- */
-#define RESPONSE_MAX_SIZE 1024
-
-/**
- * REQUEST_MAX_SIZE
- *
- * if you don't expect big requests from the remote device, this buffer can be small (usually 128 bytes or less)
- */
-#define REQUEST_MAX_SIZE 256
-
-/**
- * WIFI_BUF_MAX_SIZE
- *
- * the longest content is usually the FEATURES array, so the minimum size should be the size of
- * FEATURES_TEMPLATE. usually this is the reason of most hard faults, so try increasing it
- */
-#define WIFI_BUF_MAX_SIZE 800
-
-/**
- * UART_BUFFER_SIZE
- *
- * if you have to retrieve large amounts of data (i.e. from an API), set this to the minimum size of the response
- * otherwise, it can be smaller.
- * if you don't have these requirements, you can set it to a minimum of
- * REQUEST_MAX_SIZE + some headroom to avoid receiving only partial messages
- * if you encounter weird behaviors at runtime, try increasing this buffer size
- */
+// Buffer sizes in RAM (Adjust according to memory limits)
+#define WIFI_BUF_MAX_SIZE 512
 #define UART_BUFFER_SIZE 1536
 
-#define HOSTNAME_MAX_SIZE 32		// ESPDEVICExxx
-#define NAME_MAX_SIZE 32			// human-readable name
+#define HOSTNAME_MAX_SIZE 32
+#define NAME_MAX_SIZE 32
 
-#define UART_TX_TIMEOUT 500			// ms
-#define UART_RX_IDLE_TIMEOUT 3000	// ms
+#define UART_TX_TIMEOUT 500         // ms
+#define UART_RX_IDLE_TIMEOUT 3000   // ms
 
-#define RECONNECTION_DELAY_MINS 1	// minutes
-#define RECONNECTION_DELAY_MILLIS RECONNECTION_DELAY_MINS * 60000
+#define RECONNECT_CHECK_INTERVAL 60000 // ms
+#define RECONNECTION_DELAY_MINS 1    // minutes
+#define RECONNECTION_DELAY_MILLIS (RECONNECTION_DELAY_MINS * 60000)
 
 typedef struct
 {
-	char* text;
-	uint8_t size;
-	bool read;
-	bool clear_if_read;
+    char* text;
+    uint8_t size;
+    bool read;
+    bool clear_if_read;
 } Notification_t;
 
-extern Notification_t notification;	// defined in wifihandler/wifihandler.c
+extern Notification_t notification;
 
 // ==========================================================================================
 // 									IRRIGATION / SCHEDULE
 // ==========================================================================================
 #define VALVES_NUM 4
 #define MIN_WATER_FLOW 30			// liters per hour
-#define SCHEDULE_TIME_SIZE 11		// hh:mm-hh:mm
-#define DEFAULT_SCHEDULE "00:00-00:00"
+#define SCHEDULE_TIME_SIZE 11		// hh:mm-dddd
+#define DEFAULT_SCHEDULE "00:00-0000"
 
 // ==========================================================================================
 // 									IRRIGATION STRUCTS
@@ -148,10 +127,12 @@ typedef struct schedule
 {
 	int8_t 				hour_open;
 	int8_t 				minute_open;
-	int8_t 				hour_close;
-	int8_t 				minute_close;
+	uint16_t			duration;
 	char				text[SCHEDULE_TIME_SIZE+1];
 } Schedule_t;
+
+// Forward declaration of Switch_t
+typedef struct Switch_s Switch_t;
 
 typedef struct valve
 {
@@ -162,7 +143,17 @@ typedef struct valve
 	struct flow* 		flow;
 	struct schedule* 	schedule;
 	bool 				has_manual_override;
+	Switch_t* 			sw;
 } Valve_t;
+
+typedef struct bat
+{
+	uint16_t voltage_mv;
+	uint16_t voltage_integer;
+	uint16_t voltage_decimal;
+} Battery_t;
+
+extern Battery_t bat;
 
 // ==========================================================================================
 // 											WEATHER
@@ -174,100 +165,22 @@ typedef struct valve
 // ==========================================================================================
 // 										SAVE DATA
 // ==========================================================================================
-/**
- * The save data will be written to the last page of the memory bank
- * 					!!!See FLASH section at the top of the file!!!
- */
-
-/**
-* Schedules are saved consecutively without separators, like
-* 08:00-08:150830-08:45 (these are two consecutive schedules)
-* They can be retrieved by reading SCHEDULE_TIME_SIZE at
-* each index: SCHEDULE_TIME_SIZE * i
-* where i is the index of the valve (0, 1, 2...)
-*/
 #ifdef ENABLE_SAVE_TO_FLASH
 typedef struct sdata
 {
 	char schedules[SCHEDULE_TIME_SIZE * VALVES_NUM];
 	char name[NAME_MAX_SIZE + 1];
 	char ip[15 + 1];
+#ifdef ENABLE_SERVO
+	uint8_t servo_min_angle[MAX_SERVOS];
+	uint8_t servo_max_angle[MAX_SERVOS];
+	uint8_t servo_angle[MAX_SERVOS];
+#endif
 } SaveData_t;
 
 extern SaveData_t savedata;
 #endif
 
-// ==========================================================================================
-// 										COMM TEMPLATE
-// ==========================================================================================
-
-/**
- * template:
- * type1$Name:data;
- * type2$Name,additional_feature$feature_Name$data,additional_feature$feature_name$data...;
- *
- * every type must have a numerical ID (typeX - X being the ID).
- * every type must have a name.
- * a type can have additional features, that must be put on the same line of the main feature,
- * preceded by a comma ",".
- * a semicolon ";" must be put at the end of each feature (line).
- *
- * example:
- * switch1$Switch number one,sensor$Switch status$%d;
- * switch2$Switch number two,sensor$Switch status$%d,sensor$Time$%d;
- * timestamp1$Uptime$%d;
- * sensor1$Battery voltage$%d;
- *
- * FEATURE				SYNTAX												OPTIONAL SYNTAX
- * sensor				sensorX$text$%d text
- * switch				switchX$text,status$%d								switchX$switch_name,status$%d,sensor$sensor_name$%d
- *		status has to be 0 or 1, according to the switch state
- * textinput				textinputX$default_text								textinputX$txt_name,button$btn_name$send<command> (without a space)
- * 		text inside the textinput field will be appended at the end of the command to be sent
- * timepicker			timepicker$%s (time data, should be hh:mm-hh:mm)	timepicker$%s,button$btn_name$send<command>
- * timestamp			timestampX$text$d text
- * external				externalX$id
- * 		external features have an ID, read by the android app, which identifies a feature that will be retrieved from
- * 		a server specified on the android app. the server will return the feature itself that will be displayed
- * 		on the device page on the app.
- *
- * 		external features:
- * 		1 = GRAPH
- *			to mark a SENSOR to be put on the graph, append:
- *			$graph_LineLabel (unit)
- *			LineLabel will be the label of the graph data. this unit will be used for the DAYS time frame.
- *
- *			if you need another unit for MONTHS and YEARS, append:
- *			$graph_LineLabel1 (unit1)_LineLabel2 (unit2)
- *			LineLabel1 and unit1 will be used for DAYS; LineLabel2 and unit2 will be used for MONTHS and YEARS
- *
- *			example: "sensor1$Power$%d W$graph_Average power (W)_Energy (Wh);"
- *
- * 		NOTE: external features will only be updated ONCE, every time the device is loaded in the app. The user can manually refresh the data.
- */
-
-typedef struct bat
-{
-	uint16_t voltage_mv;
-	uint16_t voltage_integer;
-	uint16_t voltage_decimal;
-
-} Battery_t;
-
-extern Battery_t bat;
-
-static const char MQTT_DISCOVERY_VALVE[] = 
-"{\"name\":\"%s\",\"cmd_t\":\"snse/%s/valve%d/set\",\"stat_t\":\"snse/%s/valve%d/state\",\"pl_on\":\"1\",\"pl_off\":\"0\",\"uniq_id\":\"%s_valve%d\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"%s\"}}";
-
-static const char MQTT_DISCOVERY_SENSOR[] = 
-"{\"name\":\"%s\",\"stat_t\":\"snse/%s/%s/state\",\"unit_of_meas\":\"%s\",\"dev_cla\":\"%s\",\"stat_cla\":\"measurement\",\"uniq_id\":\"%s_%s\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"%s\"}}";
-
-static const char MQTT_DISCOVERY_TIME[] = 
-"{\"name\":\"%s\",\"cmd_t\":\"snse/%s/valve%d/%s/set\",\"stat_t\":\"snse/%s/valve%d/%s/state\",\"uniq_id\":\"%s_valve%d_%s\",\"dev\":{\"ids\":[\"%s\"],\"name\":\"%s\"}}";
-
-static const char OVERTEMP_TEXT[] = "Temperatura massima superata";
-
-static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] = "Le valvole non verranno aperte causa pioggia entro le ultime o prossime 12 ore";
-static const char NOTIFICATION_LOW_BATTERY[] = "Batteria scarica!";
+static const char NOTIFICATION_WEATHER_NO_VALVE_OPEN[] = "Valvole bloccate per pioggia";
 
 #endif /* SETTINGS_H_ */

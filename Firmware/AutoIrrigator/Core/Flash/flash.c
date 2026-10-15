@@ -6,14 +6,11 @@
  */
 
 #include "flash.h"
-#include "cmsis_gcc.h"
-#include "stm32g0xx_hal_def.h"
-#include "stm32g0xx_hal_flash.h"
 #include <string.h>
 
 SaveData_t savedata;
 
-HAL_StatusTypeDef FLASH_EraseLastPage()
+void FLASH_EraseLastPage()
 {
 	FLASH_EraseInitTypeDef erase_structure;
 	erase_structure.TypeErase = FLASH_TYPEERASE_PAGES;
@@ -21,7 +18,7 @@ HAL_StatusTypeDef FLASH_EraseLastPage()
 	erase_structure.Page = FLASH_PAGE_NB - 1;	// last page
 	erase_structure.NbPages = 1;
 	uint32_t page_error = 0;
-	return HAL_FLASHEx_Erase(&erase_structure, &page_error);
+	HAL_FLASHEx_Erase(&erase_structure, &page_error);
 }
 
 void FLASH_WriteBuffer(uint8_t* buf, uint32_t size)

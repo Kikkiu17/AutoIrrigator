@@ -76,6 +76,7 @@ Response_t WIFI_EnableNTPServer(WIFI_t* wifi, int8_t time_offset);
 
 Response_t WIFI_MQTT_Config(WIFI_t* wifi, const char* client_id);
 Response_t WIFI_MQTT_ConnectBroker(WIFI_t* wifi, const char* broker_ip, uint16_t port);
+Response_t WIFI_MQTT_Clean(WIFI_t* wifi);
 Response_t WIFI_MQTT_Subscribe(WIFI_t* wifi, const char* topic, uint8_t qos);
 Response_t WIFI_MQTT_Publish(WIFI_t* wifi, const char* topic, const char* payload, uint8_t qos, uint8_t retain);
 Response_t WIFI_MQTT_Receive(WIFI_t* wifi, char* topic_out, char* payload_out, uint32_t timeout);

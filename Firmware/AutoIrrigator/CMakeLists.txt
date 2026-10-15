@@ -50,6 +50,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    Core/ESP8266
+    Core/wifihandler
 )
 
 # Add project symbols (macros)
@@ -73,6 +75,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/irrigator/irrigator.c
     Core/weather/weather.c
     Core/wifihandler/wifihandler.c
+    Core/wifihandler/userhandlers.c
     Core/Flash/flash.c
 )
 
@@ -81,5 +84,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 
 target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -flto
+)
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     -flto
 )

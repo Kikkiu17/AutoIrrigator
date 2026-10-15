@@ -10,9 +10,8 @@
 
 #include "stm32g0xx_hal.h"
 #include "../settings.h"
-#include "stm32g0xx_hal_def.h"
 
-HAL_StatusTypeDef FLASH_EraseLastPage();
+void FLASH_EraseLastPage();
 void FLASH_WriteBuffer(uint8_t* buf, uint32_t size);
 void FLASH_WriteSaveData();
 void FLASH_ReadSaveData();

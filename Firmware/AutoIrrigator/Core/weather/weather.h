@@ -28,6 +28,6 @@ uint8_t WEATHER_GetForecast(Weather_t* weather, char* uart_buffer);
 int8_t WEATHER_GetProbablePrecipitation(Weather_t* wx, uint8_t start_hour);
 int8_t WEATHER_GetLowProbPrecipitation(Weather_t* wx, uint8_t start_hour);
 int8_t WEATHER_GetTodayLastPrecipitation(Weather_t* wx);
-int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx);
+int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx, uint8_t start_hour);
 
 #endif /* WEATHER_WEATHER_H_ */

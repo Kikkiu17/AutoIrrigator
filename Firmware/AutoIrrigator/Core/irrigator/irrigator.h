@@ -1,5 +1,5 @@
 /*
- * valve.h
+ * irrigator.h
  *
  *  Created on: Apr 7, 2025
  *      Author: Kikkiu
@@ -16,9 +16,9 @@
 
 void SCHEDULE_Save(Valve_t* valve_list, uint8_t valves_nb);
 uint8_t SCHEDULE_SetSchedule(Valve_t* valve, char* new_schedule);
-void SCHEDULE_WriteToFlash(Valve_t* valve_list, uint8_t valves_nb);
+void SCHEDULE_UpdateText(Schedule_t* schedule);
 void SCHEDULE_ReadFromFlash(Valve_t* valve_list, uint8_t valves_nb);
-void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id,  GPIO_TypeDef* valve_port, uint16_t valve_pin);
+void VALVE_Init(Valve_t* valve, Flow_t* flow, Schedule_t* schedule, uint8_t id, GPIO_TypeDef* valve_port, uint16_t valve_pin, Switch_t* sw);
 void VALVE_Open(Valve_t* valve);
 void VALVE_Close(Valve_t* valve);
 void FLOW_CalculateFlow(Flow_t* flow);

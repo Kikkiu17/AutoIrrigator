@@ -233,9 +233,9 @@ int8_t WEATHER_GetTodayLastPrecipitation(Weather_t* wx)
 	return last_precipitation_hour;
 }
 
-int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx)
+int8_t WEATHER_GetTodayNextPrecipitation(Weather_t* wx, uint8_t start_hour)
 {
-	for (uint8_t h = 0; h < 24; h++)
+	for (uint8_t h = start_hour; h < 24; h++)
 	{
 		if (wx->hourly_precipitation[h] >= PRECIPITATION_THRESHOLD)
 			return h;
